@@ -1,3 +1,5 @@
+local ANUM = function() print("abc") end
+
 local dev = require("my-outline.dev")
 
 local sym_win = require("my-outline.symbols_window")
@@ -126,16 +128,28 @@ end
 function M.setup()
     if dev.env() == "dev" then dev.setup() end
 
-    vim.api.nvim_create_user_command("SymbolsDebug", symbols_debug, {})
+    vim.api.nvim_create_user_command("Td", symbols_debug, {})
 
     vim.api.nvim_create_user_command("Tr", function() coll:add("right", false) end, {})
-    vim.api.nvim_create_user_command("TR", function() coll:add("right", true) end, {})
+    vim.api.nvim_create_user_command("TR", function() coll:add("right", true) coll:lsp() end, {})
     vim.api.nvim_create_user_command("Tl", function() coll:add("left", false) end, {})
     vim.api.nvim_create_user_command("TL", function() coll:add("left", true) end, {})
 
     vim.api.nvim_create_user_command("Tq", function() coll:quit() end, {})
     vim.api.nvim_create_user_command("Tqo", function() coll:quit_outer() end, {})
     vim.api.nvim_create_user_command("Tqa", function() coll:quit_all() end, {})
+
+    vim.api.nvim_create_user_command("Tlsp", function() coll:lsp() end, {})
 end
+
+--- TREE
+--- Fields:
+---  kind
+---  name
+---  folded
+---  extra info
+---  range
+---  level
+---  children
 
 return M
