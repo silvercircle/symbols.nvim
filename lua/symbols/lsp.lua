@@ -36,21 +36,4 @@ for k, v in pairs(M.SymbolKind) do
     M.SymbolKindString[v] = k
 end
 
--- ---@class Pos
--- ---@field line integer
--- ---@field character integer
---
--- ---@class Range
--- ---@field start Pos
--- ---@field end Pos
---
--- ---@class Symbol
--- ---@field detail string
--- ---@field kind LspSymbolKind
--- ---@field name string
--- ---@field range Range
--- ---@field selectionRange Range
-
----@alias vim.lsp.Handler fun(err: table | nil, result: Symbol[] | nil, ctx: table, config: table)
-
 return M
