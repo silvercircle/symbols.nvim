@@ -12,24 +12,28 @@ local M = {}
 ---@field end Pos
 
 ---@class Symbol
----@field kind any
+---@field kind string
 ---@field name string
 ---@field detail string
+---@field level integer
 ---@field parent Symbol | nil
 ---@field children Symbol[]
 ---@field range Range
 ---@field selectionRange Range
+---@field folded boolean
 
 ---@return Symbol
 local function symbol_root()
     return {
-        kind = "",
+        kind = "root",
         name = "<root>",
         detail = "",
+        level = 0,
         parent = nil,
         children = {},
         range =  { start = { 0, 0 }, ["end"] = { -1, -1 } },
         selectionRange = { start = { 0, 0 }, ["end"] = { -1, -1 } },
+        folded = false,
     }
 end
 
@@ -38,7 +42,162 @@ end
 ---@class Provider
 ---@field name string
 ---@field supports fun(cache: table, buf: integer): boolean
----@field async_get_symbols fun(cache: any, buf: integer, refresh_symbols: RefreshSymbolsFun, on_fail: fun())
+---@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: RefreshSymbolsFun, on_fail: fun())) | nil
+---@field get_symbols (fun(cache: any, buf: integer): boolean, Symbol?) | nil
+
+---@param symbol any
+---@param parent Symbol?
+---@param level integer
+local function rec_tidy_lsp_symbol(symbol, parent, level)
+    symbol.parent = parent
+    symbol.detail = symbol.detail or ""
+    symbol.children = symbol.children or {}
+    symbol.kind = lsp.SymbolKindString[symbol.kind]
+    symbol.folded = true
+    symbol.level = level
+    for _, child in ipairs(symbol.children) do
+        rec_tidy_lsp_symbol(child, symbol, level+1)
+    end
+end
+
+---@type Provider
+local LspProvider = {
+    name = "lsp",
+    supports = function(cache, buf)
+        local clients = vim.lsp.get_clients({bufnr = buf, method = "documentSymbolProvider" })
+        cache.client = clients[1]
+        return #clients > 0
+    end,
+    async_get_symbols = function(cache, buf, refresh_symbols, on_fail)
+        local function handler(err, result, _, _)
+            if err ~= nil then
+                on_fail()
+                return
+            end
+            local root = symbol_root()
+            root.children = result
+            rec_tidy_lsp_symbol(root, nil, 0)
+            root.folded = false
+            refresh_symbols(root)
+        end
+
+        local params = { textDocument = vim.lsp.util.make_text_document_params(buf), }
+        local ok, request_id = cache.client.request("textDocument/documentSymbol", params, handler)
+        if not ok then on_fail() end
+
+        LSP_REQUEST_TIMEOUT_MS = 200
+        vim.defer_fn(
+            function()
+                cache.client.cancel_request(request_id)
+                on_fail()
+            end,
+            LSP_REQUEST_TIMEOUT_MS
+        )
+    end,
+    get_symbols = nil,
+}
+
+---@type Provider
+local VimdocProvider = {
+    name = "vimdoc",
+    supports = function(cache, buf)
+        local val = vim.api.nvim_get_option_value("ft", { buf = buf })
+        if val ~= 'help' then
+            return false
+        end
+        local ok, parser = pcall(vim.treesitter.get_parser, buf, "vimdoc")
+        if not ok then
+            return false
+        end
+        cache.parser = parser
+        return true
+    end,
+    get_symbols = function(cache, _)
+        local rootNode = cache.parser:parse()[1]:root()
+
+        local queryString = [[
+            [
+                (h1 (heading) @h1)
+                (h2 (heading) @h2)
+                (h3 (heading) @h3)
+                (tag) @tag
+            ]
+        ]]
+        local query = vim.treesitter.query.parse("vimdoc", queryString)
+
+        local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3, tag = 4 }
+        local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", tag = "Tag" }
+
+        local root = symbol_root()
+        local current = root
+
+        local function updateRangeEnd(node, rangeEnd)
+            if node.range ~= nil and node.level <= 3 then
+                node.range['end'] = { character = node.range['end'], line = rangeEnd }
+                node.selectionRange = node.range
+            end
+        end
+
+        for id, node, _, _ in query:iter_captures(rootNode, 0) do
+            local capture = query.captures[id]
+            local captureLevel = captureLevelMap[capture]
+
+            local row1, col1, row2, col2 = node:range()
+            local captureString = vim.api.nvim_buf_get_text(0, row1, col1, row2, col2, {})[1]
+
+            local prevHeadingsRangeEnd = row1 - 1
+            local rangeStart = row1
+            if captureLevel <= 2 then
+                prevHeadingsRangeEnd = prevHeadingsRangeEnd - 1
+                rangeStart = rangeStart - 1
+            end
+
+            while captureLevel <= current.level do
+                updateRangeEnd(current, prevHeadingsRangeEnd)
+                current = current.parent
+                assert(current ~= nil)
+            end
+
+            ---@type Symbol
+            local new = {
+                kind = kindMap[capture],
+                name = captureString,
+                detail = "",
+                -- Treesitter includes the last newline in the end range which spans
+                -- until the next heading, so we -1
+                -- TODO: This fix can be removed when we let highlight_hovered_item
+                -- account for current column position in addition to the line.
+                -- FIXME: By the way the end character should be the EOL
+                selectionRange = {
+                    start = { character = col1, line = rangeStart },
+                    ['end'] = { character = col2, line = row2 - 1 },
+                },
+                range = {
+                    start = { character = col1, line = rangeStart },
+                    ['end'] = { character = col2, line = row2 - 1 },
+                },
+                children = {},
+
+                parent = current,
+                level = captureLevel,
+                folded = true,
+            }
+
+            table.insert(current.children, new)
+            current = new
+        end
+
+        local lineCount = vim.api.nvim_buf_line_count(0)
+        while current.level > 0 do
+            updateRangeEnd(current, lineCount)
+            current = current.parent
+            assert(current ~= nil)
+        end
+
+        return true, root
+    end,
+    async_get_symbols = nil,
+}
 
 ---@class Sidebar
 ---@field deleted boolean
@@ -183,6 +342,104 @@ local function sidebar_destroy(sidebar)
     sidebar.deleted = true
 end
 
+---@param sidebar Sidebar
+---@return Symbol?
+local function sidebar_current_symbol(sidebar)
+    if not vim.api.nvim_win_is_valid(sidebar.win) then
+        return nil
+    end
+
+    ---@param symbol Symbol
+    ---@param num integer
+    ---@return Symbol, integer
+    local function _find_symbol(symbol, num)
+        if num == 0 then return symbol, 0 end
+        if symbol.folded then return symbol, num end
+        for _, sym in ipairs(symbol.children) do
+            local s
+            s, num = _find_symbol(sym, num - 1)
+            if num <= 0 then return s, 0 end
+        end
+        return symbol, num
+    end
+
+    local line = vim.api.nvim_win_get_cursor(sidebar.win)[1]
+    local s, _ = _find_symbol(sidebar.root_symbol, line)
+    return s
+end
+
+---@param symbol Symbol
+local function symbol_to_lines(symbol, indent, lines)
+    if symbol.folded then return end
+    for _, sym in ipairs(symbol.children) do
+        local prefix = #sym.children > 0 and "> " or "  "
+        local line = indent .. prefix .. sym.kind .. " " .. sym.name
+        table.insert(lines, line)
+        symbol_to_lines(sym, indent .. "  ", lines)
+    end
+end
+
+---@param sidebar Sidebar
+local function sidebar_refresh_view(sidebar)
+    local lines = {}
+    symbol_to_lines(sidebar.root_symbol, "", lines)
+    buf_set_content(sidebar.buf, lines)
+end
+
+---@param sidebar Sidebar
+---@param providers Provider[]
+local function sidebar_refresh_symbols(sidebar, providers)
+
+    ---@param symbol Symbol
+    local function _refresh_sidebar(symbol)
+        sidebar.root_symbol = symbol
+        sidebar_refresh_view(sidebar)
+    end
+
+    ---@param provider Provider
+    local function on_fail(provider)
+        return function() print(provider.name .. " failed.") end
+    end
+
+    local buf = sidebar_source_win_buf(sidebar)
+    for _, provider in ipairs(providers) do
+        local cache = {}
+        if provider.supports(cache, buf) then
+            if provider.async_get_symbols ~= nil then
+                provider.async_get_symbols(
+                    cache,
+                    buf,
+                    _refresh_sidebar,
+                    on_fail(provider)
+                )
+            else
+                local ok, symbol = provider.get_symbols(cache, buf)
+                if not ok then
+                    on_fail(provider)()
+                else
+                    assert(symbol ~= nil)
+                    _refresh_sidebar(symbol)
+                end
+            end
+        end
+    end
+end
+
+---@param win integer
+---@param duration_ms integer
+local function flash_highlight(win, duration_ms, lines)
+  local bufnr = vim.api.nvim_win_get_buf(win)
+  local line = vim.api.nvim_win_get_cursor(win)[1]
+  local ns = vim.api.nvim_create_namespace("")
+  for i=1,lines do
+      vim.api.nvim_buf_add_highlight(bufnr, ns, "Visual", line - 1 + i - 1, 0, -1)
+  end
+  local remove_highlight = function()
+    pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
+  end
+  vim.defer_fn(remove_highlight, duration_ms)
+end
+
 ---@param num integer
 ---@param sidebar Sidebar
 local function sidebar_new(sidebar, num)
@@ -193,32 +450,37 @@ local function sidebar_new(sidebar, num)
     vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")
     vim.api.nvim_buf_set_option(sidebar.buf, "filetype", "SymbolsSidebar")
 
-    sidebar_open(sidebar)
-end
+    vim.keymap.set("n", "l", function()
+        local symbol = sidebar_current_symbol(sidebar)
+        if symbol == nil then return end
+        symbol.folded = false
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
 
----@param sidebar Sidebar
----@param providers Provider[]
-local function sidebar_refresh(sidebar, providers)
-    local buf = sidebar_source_win_buf(sidebar)
-    for _, provider in ipairs(providers) do
-        local cache = {}
-        if provider.supports(cache, buf) then
-            provider.async_get_symbols(
-                cache,
-                buf,
-                function(symbol)
-                    sidebar.root_symbol = symbol
-                    local lines = {}
-                    for _, sym in ipairs(sidebar.root_symbol.children) do
-                        local line = " [" .. lsp.SymbolKindString[sym.kind] .. "] " .. sym.name
-                        table.insert(lines, line)
-                    end
-                    buf_set_content(sidebar.buf, lines)
-                end,
-                function() print(provider.name .. " failed.") end
-            )
+    vim.keymap.set("n", "h", function()
+        local symbol = sidebar_current_symbol(sidebar)
+        assert(symbol ~= nil)
+        if symbol.level > 1 and (symbol.folded or #symbol.children == 0) then
+            symbol = symbol.parent
         end
-    end
+        symbol.folded = true
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
+
+    vim.keymap.set("n", "<CR>", function()
+        local symbol = sidebar_current_symbol(sidebar)
+        assert(symbol ~= nil)
+        vim.api.nvim_set_current_win(sidebar.source_win)
+        vim.api.nvim_win_set_cursor(
+            sidebar.source_win,
+            { symbol.selectionRange.start.line+1, symbol.selectionRange.start.character }
+        )
+        vim.fn.win_execute(sidebar.source_win, 'normal! zz')
+        local r = symbol.range
+        flash_highlight(sidebar.source_win, 400, r["end"].line - r.start.line + 1)
+    end, { buffer = sidebar.buf })
+
+    sidebar_open(sidebar)
 end
 
 local function create_command(cmds, name, cmd, opts)
@@ -271,57 +533,6 @@ local function find_sidebar_for_reuse(sidebars)
     return nil, -1
 end
 
----@class LspCache
----@field client any
-
----@param cache table
----@param buf integer
----@return boolean
-local function supports_lsp(cache, buf)
-    local clients = vim.lsp.get_clients({bufnr = buf, method = "documentSymbolProvider" })
-    cache.client = clients[1]
-    return #clients > 0
-end
-
----@param symbol any
----@param parent Symbol?
-local function rec_tidy_lsp_symbol(symbol, parent)
-    symbol.parent = parent
-    symbol.detail = symbol.detail or ""
-    symbol.children = symbol.children or {}
-    for _, child in ipairs(symbol.children) do
-        rec_tidy_lsp_symbol(child, symbol)
-    end
-end
-
----@param cache LspCache
----@param buf integer
----@param refresh_symbols RefreshSymbolsFun
-local function async_get_symbols_lsp(cache, buf, refresh_symbols, on_fail)
-    local function handler(err, result, ctx, config)
-        if err ~= nil then
-            on_fail()
-            return
-        end
-        local root = symbol_root()
-        root.children = result
-        rec_tidy_lsp_symbol(root, nil)
-        refresh_symbols(root)
-    end
-
-    local params = { textDocument = vim.lsp.util.make_text_document_params(buf), }
-    local ok, request_id = cache.client.request("textDocument/documentSymbol", params, handler)
-    if not ok then on_fail() end
-
-    LSP_REQUEST_TIMEOUT_MS = 200
-    vim.defer_fn(
-        function()
-            cache.client.cancel_request(request_id)
-            on_fail()
-        end,
-        LSP_REQUEST_TIMEOUT_MS
-    )
-end
 
 ---@param sidebars Sidebar[]
 local function on_win_close(sidebars, win)
@@ -342,11 +553,8 @@ function M.setup()
 
     ---@type Provider[]
     local providers = {
-        {
-            name = "lsp",
-            supports = supports_lsp,
-            async_get_symbols = async_get_symbols_lsp,
-        },
+        LspProvider,
+        VimdocProvider,
     }
 
     local function on_reload()
@@ -386,7 +594,7 @@ function M.setup()
                     num = #sidebars
                 end
                 sidebar_new(sidebar, num)
-                sidebar_refresh(sidebar, providers)
+                sidebar_refresh_symbols(sidebar, providers)
             else
                 sidebar_open(sidebar)
             end
