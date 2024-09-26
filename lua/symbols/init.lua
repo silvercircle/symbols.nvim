@@ -1,6 +1,9 @@
 local dev = require("symbols.dev")
 local lsp = require("symbols.lsp")
 
+local CHAR_FOLDED = ""
+local CHAR_UNFOLDED = ""
+
 local M = {}
 
 ---@class Pos
@@ -179,7 +182,7 @@ local VimdocProvider = {
                 (h1 (heading) @h1)
                 (h2 (heading) @h2)
                 (h3 (heading) @h3)
-                (tag) @tag
+                (tag text: (word) @tag)
             ]
         ]]
         local query = vim.treesitter.query.parse("vimdoc", queryString)
@@ -475,7 +478,14 @@ local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display)
     local function get_buf_lines_and_highlights(symbol, indent, line_nr)
         if symbol.folded then return line_nr end
         for _, sym in ipairs(symbol.children) do
-            local prefix = #sym.children > 0 and "> " or "  "
+            local prefix
+            if #sym.children == 0 then
+                prefix = "  "
+            elseif sym.folded then
+                prefix = CHAR_FOLDED .. " "
+            else
+                prefix = CHAR_UNFOLDED .. " "
+            end
             local kind_display = kind_to_display(sym.kind)
             local line = indent .. prefix .. kind_display .. " " .. sym.name
             table.insert(buf_lines, line)
