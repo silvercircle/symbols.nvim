@@ -31,16 +31,20 @@ local function symbol_root()
         level = 0,
         parent = nil,
         children = {},
-        range =  { start = { 0, 0 }, ["end"] = { -1, -1 } },
+        range = { start = { 0, 0 }, ["end"] = { -1, -1 } },
         selectionRange = { start = { 0, 0 }, ["end"] = { -1, -1 } },
         folded = false,
     }
 end
 
 ---@alias RefreshSymbolsFun fun(symbols: Symbol)
+---@alias KindToHlGroupFun fun(kind: string): string
+---@alias KindToDisplayFun fun(kind: string): string
 
 ---@class Provider
 ---@field name string
+---@field kind_to_hl_group KindToHlGroupFun
+---@field kind_to_display KindToDisplayFun
 ---@field supports fun(cache: table, buf: integer): boolean
 ---@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: RefreshSymbolsFun, on_fail: fun())) | nil
 ---@field get_symbols (fun(cache: any, buf: integer): boolean, Symbol?) | nil
@@ -56,15 +60,50 @@ local function rec_tidy_lsp_symbol(symbol, parent, level)
     symbol.folded = true
     symbol.level = level
     for _, child in ipairs(symbol.children) do
-        rec_tidy_lsp_symbol(child, symbol, level+1)
+        rec_tidy_lsp_symbol(child, symbol, level + 1)
     end
 end
 
 ---@type Provider
 local LspProvider = {
     name = "lsp",
+    kind_to_hl_group = function(kind)
+        ---@type table<string, string>
+        local map  = {
+            File = "Identifier",
+            Module = "Include",
+            Namespace = "Include",
+            Package = "Include",
+            Class = "Type",
+            Method = "Function",
+            Property = "Identifier",
+            Field = "Identifier",
+            Constructor = "Special",
+            Enum = "Type",
+            Interface = "Type",
+            Function = "Function",
+            Variable = "Constant",
+            Constant = "Constant",
+            String = "String",
+            Number = "Number",
+            Boolean = "Boolean",
+            Array = "Constant",
+            Object = "Type",
+            Key = "Type",
+            Null = "Type",
+            EnumMember = "Identifier",
+            Struct = "Structure",
+            Event = "Type",
+            Operator = "Identifier",
+            TypeParameter = "Identifier",
+            Component = "Function",
+            Fragment = "Constant",
+        }
+        return map[kind]
+    end,
+    kind_to_display = function(kind) return kind end,
     supports = function(cache, buf)
-        local clients = vim.lsp.get_clients({bufnr = buf, method = "documentSymbolProvider" })
+        local clients = vim.lsp.get_clients({ bufnr = buf, method = "documentSymbolProvider" })
         cache.client = clients[1]
         return #clients > 0
     end,
@@ -100,6 +139,26 @@ local LspProvider = {
 ---@type Provider
 local VimdocProvider = {
     name = "vimdoc",
+    kind_to_hl_group = function(kind)
+        ---@type table<string, string>
+        local map = {
+            H1 = "String",
+            H2 = "String",
+            H3 = "String",
+            Tag = "Constant",
+        }
+        return map[kind]
+    end,
+    kind_to_display = function(kind)
+        ---@type type<string, string>
+        local map = {
+            H1 = "#",
+            H2 = "##",
+            H3 = "###",
+            Tag = "",
+        }
+        return map[kind]
+    end,
     supports = function(cache, buf)
         local val = vim.api.nvim_get_option_value("ft", { buf = buf })
         if val ~= 'help' then
@@ -206,6 +265,8 @@ local VimdocProvider = {
 ---@field source_win integer
 ---@field visible boolean
 ---@field root_symbol Symbol
+---@field lines table<Symbol, integer>
+---@field curr_provider Provider | nil
 
 ---@param sidebar Sidebar
 ---@return integer
@@ -270,7 +331,9 @@ local function sidebar_new_obj()
         buf = -1,
         source_win = -1,
         visible = false,
-        root_symbol = symbol_root()
+        root_symbol = symbol_root(),
+        lines = {},
+        curr_provider = nil,
     }
 end
 
@@ -320,6 +383,7 @@ local function sidebar_open(sidebar)
     win_set_option(sidebar.win, "number", false)
     win_set_option(sidebar.win, "relativenumber", false)
     win_set_option(sidebar.win, "signcolumn", "no")
+    win_set_option(sidebar.win, "cursorline", true)
 
     sidebar.visible = true
 end
@@ -343,11 +407,9 @@ local function sidebar_destroy(sidebar)
 end
 
 ---@param sidebar Sidebar
----@return Symbol?
+---@return Symbol
 local function sidebar_current_symbol(sidebar)
-    if not vim.api.nvim_win_is_valid(sidebar.win) then
-        return nil
-    end
+    assert(vim.api.nvim_win_is_valid(sidebar.win))
 
     ---@param symbol Symbol
     ---@param num integer
@@ -368,22 +430,93 @@ local function sidebar_current_symbol(sidebar)
     return s
 end
 
----@param symbol Symbol
-local function symbol_to_lines(symbol, indent, lines)
-    if symbol.folded then return end
-    for _, sym in ipairs(symbol.children) do
-        local prefix = #sym.children > 0 and "> " or "  "
-        local line = indent .. prefix .. sym.kind .. " " .. sym.name
-        table.insert(lines, line)
-        symbol_to_lines(sym, indent .. "  ", lines)
+local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebar")
+
+---@class Highlight
+---@field group string
+---@field line integer  -- one-indexed
+---@field col_start integer
+---@field col_end integer
+
+---@param buf integer
+---@param hl Highlight
+local function highlight_apply(buf, hl)
+    vim.api.nvim_buf_add_highlight(
+        buf, SIDEBAR_HL_NS, hl.group, hl.line-1, hl.col_start, hl.col_end
+    )
+end
+
+---@param root_symbol Symbol
+---@param kind_to_hl_group KindToHlGroupFun
+---@param kind_to_display KindToDisplayFun
+---@return string[], table<Symbol, integer>, Highlight[]
+local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display)
+    local symbol_to_line = {}
+
+    ---@param symbol Symbol
+    ---@param line integer
+    local function get_symbol_to_line(symbol, line)
+        if symbol.folded then return line end
+        for _, sym in ipairs(symbol.children) do
+            symbol_to_line[sym] = line
+            line = get_symbol_to_line(sym, line + 1)
+        end
+        return line
     end
+    get_symbol_to_line(root_symbol, 1)
+
+    local buf_lines = {}
+    local highlights = {}
+
+    ---@param symbol Symbol
+    ---@param indent string
+    ---@param line_nr integer
+    ---@return integer
+    local function get_buf_lines_and_highlights(symbol, indent, line_nr)
+        if symbol.folded then return line_nr end
+        for _, sym in ipairs(symbol.children) do
+            local prefix = #sym.children > 0 and "> " or "  "
+            local kind_display = kind_to_display(sym.kind)
+            local line = indent .. prefix .. kind_display .. " " .. sym.name
+            table.insert(buf_lines, line)
+            ---@type Highlight
+            local hl = {
+                group = kind_to_hl_group(sym.kind),
+                line = line_nr,
+                col_start = #indent + #prefix,
+                col_end = #indent + #prefix + #kind_display
+            }
+            table.insert(highlights, hl)
+            line_nr = get_buf_lines_and_highlights(sym, indent .. "  ", line_nr + 1)
+        end
+        return line_nr
+    end
+    get_buf_lines_and_highlights(root_symbol, "", 1)
+
+    return  buf_lines, symbol_to_line, highlights
+end
+
+---@param sidebar Sidebar
+---@param symbol Symbol
+local function move_cursor_to_symbol(sidebar, symbol)
+    assert(vim.api.nvim_win_is_valid(sidebar.win))
+    local line = sidebar.lines[symbol]
+    vim.api.nvim_win_set_cursor(sidebar.win, { line, 0 })
 end
 
 ---@param sidebar Sidebar
 local function sidebar_refresh_view(sidebar)
-    local lines = {}
-    symbol_to_lines(sidebar.root_symbol, "", lines)
-    buf_set_content(sidebar.buf, lines)
+    local provider = sidebar.curr_provider
+    assert(provider ~= nil)
+
+    local buf_lines, symbol_to_line, highlights = process_symbols(
+        sidebar.root_symbol, provider.kind_to_hl_group, provider.kind_to_display
+    )
+    sidebar.lines = symbol_to_line
+    buf_set_content(sidebar.buf, buf_lines)
+    for _, hl in ipairs(highlights) do
+        highlight_apply(sidebar.buf, hl)
+    end
 end
 
 ---@param sidebar Sidebar
@@ -405,6 +538,7 @@ local function sidebar_refresh_symbols(sidebar, providers)
     for _, provider in ipairs(providers) do
         local cache = {}
         if provider.supports(cache, buf) then
+            sidebar.curr_provider = provider
             if provider.async_get_symbols ~= nil then
                 provider.async_get_symbols(
                     cache,
@@ -421,6 +555,7 @@ local function sidebar_refresh_symbols(sidebar, providers)
                     _refresh_sidebar(symbol)
                 end
             end
+            return
         end
     end
 end
@@ -428,16 +563,16 @@ end
 ---@param win integer
 ---@param duration_ms integer
 local function flash_highlight(win, duration_ms, lines)
-  local bufnr = vim.api.nvim_win_get_buf(win)
-  local line = vim.api.nvim_win_get_cursor(win)[1]
-  local ns = vim.api.nvim_create_namespace("")
-  for i=1,lines do
-      vim.api.nvim_buf_add_highlight(bufnr, ns, "Visual", line - 1 + i - 1, 0, -1)
-  end
-  local remove_highlight = function()
-    pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
-  end
-  vim.defer_fn(remove_highlight, duration_ms)
+    local bufnr = vim.api.nvim_win_get_buf(win)
+    local line = vim.api.nvim_win_get_cursor(win)[1]
+    local ns = vim.api.nvim_create_namespace("")
+    for i = 1, lines do
+        vim.api.nvim_buf_add_highlight(bufnr, ns, "Visual", line - 1 + i - 1, 0, -1)
+    end
+    local remove_highlight = function()
+        pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
+    end
+    vim.defer_fn(remove_highlight, duration_ms)
 end
 
 ---@param num integer
@@ -465,6 +600,7 @@ local function sidebar_new(sidebar, num)
         end
         symbol.folded = true
         sidebar_refresh_view(sidebar)
+        move_cursor_to_symbol(sidebar, symbol)
     end, { buffer = sidebar.buf })
 
     vim.keymap.set("n", "<CR>", function()
@@ -473,9 +609,9 @@ local function sidebar_new(sidebar, num)
         vim.api.nvim_set_current_win(sidebar.source_win)
         vim.api.nvim_win_set_cursor(
             sidebar.source_win,
-            { symbol.selectionRange.start.line+1, symbol.selectionRange.start.character }
+            { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
         )
-        vim.fn.win_execute(sidebar.source_win, 'normal! zz')
+        vim.fn.win_execute(sidebar.source_win, 'normal! zt')
         local r = symbol.range
         flash_highlight(sidebar.source_win, 400, r["end"].line - r.start.line + 1)
     end, { buffer = sidebar.buf })
@@ -594,10 +730,10 @@ function M.setup()
                     num = #sidebars
                 end
                 sidebar_new(sidebar, num)
-                sidebar_refresh_symbols(sidebar, providers)
             else
                 sidebar_open(sidebar)
             end
+            sidebar_refresh_symbols(sidebar, providers)
         end,
         { desc = "" }
     )
@@ -618,14 +754,13 @@ function M.setup()
     vim.api.nvim_create_autocmd(
         "WinClosed",
         {
-            pattern="*",
-            callback=function(t)
+            pattern = "*",
+            callback = function(t)
                 local win = tonumber(t.match, 10)
                 on_win_close(sidebars, win)
             end
         }
     )
-
 end
 
 return M
