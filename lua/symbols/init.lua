@@ -145,10 +145,10 @@ local VimdocProvider = {
     kind_to_hl_group = function(kind)
         ---@type table<string, string>
         local map = {
-            H1 = "String",
-            H2 = "String",
-            H3 = "String",
-            Tag = "Constant",
+            H1 = "@markup.heading.1.vimdoc",
+            H2 = "@markup.heading.2.vimdoc",
+            H3 = "@markup.heading.3.vimdoc",
+            Tag = "@label.vimdoc",
         }
         return map[kind]
     end,
@@ -158,7 +158,7 @@ local VimdocProvider = {
             H1 = "#",
             H2 = "##",
             H3 = "###",
-            Tag = "",
+            Tag = "*",
         }
         return map[kind]
     end,
@@ -270,6 +270,7 @@ local VimdocProvider = {
 ---@field root_symbol Symbol
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
+---@field custom_settings table<string, KindToDisplayFun>
 
 ---@param sidebar Sidebar
 ---@return integer
@@ -337,6 +338,7 @@ local function sidebar_new_obj()
         root_symbol = symbol_root(),
         lines = {},
         curr_provider = nil,
+        custom_settings = {}
     }
 end
 
@@ -452,8 +454,9 @@ end
 ---@param root_symbol Symbol
 ---@param kind_to_hl_group KindToHlGroupFun
 ---@param kind_to_display KindToDisplayFun
+---@param custom_kind_to_display KindToDisplayFun
 ---@return string[], table<Symbol, integer>, Highlight[]
-local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display)
+local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display, custom_kind_to_display)
     local symbol_to_line = {}
 
     ---@param symbol Symbol
@@ -486,8 +489,8 @@ local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display)
             else
                 prefix = CHAR_UNFOLDED .. " "
             end
-            local kind_display = kind_to_display(sym.kind)
-            local line = indent .. prefix .. kind_display .. " " .. sym.name
+            local kind_display = custom_kind_to_display(kind_to_display(sym.kind))
+            local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
             table.insert(buf_lines, line)
             ---@type Highlight
             local hl = {
@@ -519,8 +522,14 @@ local function sidebar_refresh_view(sidebar)
     local provider = sidebar.curr_provider
     assert(provider ~= nil)
 
+    local source_buf = sidebar_source_win_buf(sidebar)
+    local ft = vim.bo[source_buf].filetype
+
     local buf_lines, symbol_to_line, highlights = process_symbols(
-        sidebar.root_symbol, provider.kind_to_hl_group, provider.kind_to_display
+        sidebar.root_symbol,
+        provider.kind_to_hl_group,
+        provider.kind_to_display,
+        sidebar.custom_settings[ft] or (function(kind) return kind end)
     )
     sidebar.lines = symbol_to_line
     buf_set_content(sidebar.buf, buf_lines)
@@ -531,7 +540,8 @@ end
 
 ---@param sidebar Sidebar
 ---@param providers Provider[]
-local function sidebar_refresh_symbols(sidebar, providers)
+---@param custom_settings table<string, table<string, KindToDisplayFun>>
+local function sidebar_refresh_symbols(sidebar, providers, custom_settings)
 
     ---@param symbol Symbol
     local function _refresh_sidebar(symbol)
@@ -549,6 +559,7 @@ local function sidebar_refresh_symbols(sidebar, providers)
         local cache = {}
         if provider.supports(cache, buf) then
             sidebar.curr_provider = provider
+            sidebar.custom_settings = custom_settings[provider.name] or {}
             if provider.async_get_symbols ~= nil then
                 provider.async_get_symbols(
                     cache,
@@ -585,6 +596,15 @@ local function flash_highlight(win, duration_ms, lines)
     vim.defer_fn(remove_highlight, duration_ms)
 end
 
+---@param symbol Symbol
+---@param value boolean
+local function symbol_change_folded_rec(symbol, value)
+    symbol.folded = value
+    for _, sym in ipairs(symbol.children) do
+        symbol_change_folded_rec(sym, value)
+    end
+end
+
 ---@param num integer
 ---@param sidebar Sidebar
 local function sidebar_new(sidebar, num)
@@ -602,6 +622,13 @@ local function sidebar_new(sidebar, num)
         sidebar_refresh_view(sidebar)
     end, { buffer = sidebar.buf })
 
+    vim.keymap.set("n", "L", function()
+        local symbol = sidebar_current_symbol(sidebar)
+        if symbol == nil then return end
+        symbol_change_folded_rec(symbol, false)
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
+
     vim.keymap.set("n", "h", function()
         local symbol = sidebar_current_symbol(sidebar)
         assert(symbol ~= nil)
@@ -609,6 +636,17 @@ local function sidebar_new(sidebar, num)
             symbol = symbol.parent
         end
         symbol.folded = true
+        sidebar_refresh_view(sidebar)
+        move_cursor_to_symbol(sidebar, symbol)
+    end, { buffer = sidebar.buf })
+
+    vim.keymap.set("n", "H", function()
+        local symbol = sidebar_current_symbol(sidebar)
+        assert(symbol ~= nil)
+        while(symbol.level ~= 1) do
+            symbol = symbol.parent
+        end
+        symbol_change_folded_rec(symbol, true)
         sidebar_refresh_view(sidebar)
         move_cursor_to_symbol(sidebar, symbol)
     end, { buffer = sidebar.buf })
@@ -625,6 +663,63 @@ local function sidebar_new(sidebar, num)
         local r = symbol.range
         flash_highlight(sidebar.source_win, 400, r["end"].line - r.start.line + 1)
     end, { buffer = sidebar.buf })
+
+    vim.keymap.set("n", "zR", function()
+        symbol_change_folded_rec(sidebar.root_symbol, false)
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
+
+    vim.keymap.set("n", "zM", function()
+        symbol_change_folded_rec(sidebar.root_symbol, true)
+        sidebar.root_symbol.folded = false
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
+
+    ---@param symbol Symbol
+    ---@return integer
+    local function find_level_to_unfold(symbol)
+        local MAX_LEVEL = 100000
+
+        if symbol.level ~= 0 and symbol.folded then
+            return symbol.level
+        end
+
+        local min_level = MAX_LEVEL
+        for _, sym in ipairs(symbol.children) do
+            min_level = math.min(min_level, find_level_to_unfold(sym))
+        end
+
+        return min_level
+    end
+
+    local function find_level_to_fold(symbol)
+        local max_level = (symbol.folded and 1) or symbol.level
+        for _, sym in ipairs(symbol.children) do
+            max_level = math.max(max_level, find_level_to_fold(sym))
+        end
+        return max_level
+    end
+
+    local function change_fold_at_level(symbol, level, value)
+        if symbol.level == level then symbol.folded = value end
+        if symbol.level >= level then return end
+        for _, sym in ipairs(symbol.children) do
+            change_fold_at_level(sym, level, value)
+        end
+    end
+
+    vim.keymap.set("n", "zr", function()
+        local level = find_level_to_unfold(sidebar.root_symbol)
+        change_fold_at_level(sidebar.root_symbol, level, false)
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
+
+    vim.keymap.set("n", "zm", function()
+        local level = find_level_to_fold(sidebar.root_symbol)
+        change_fold_at_level(sidebar.root_symbol, level, true)
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
+
 
     sidebar_open(sidebar)
 end
@@ -703,6 +798,52 @@ function M.setup()
         VimdocProvider,
     }
 
+    ---@type table<string, table<string, KindToDisplayFun>>
+    local custom_kind_to_display = {
+        lsp = {
+            lua = function(kind)
+                ---@type table<string, string>
+                local map = {
+                    Array = "[]",
+                    Boolean = "boolean",
+                    Constant = "param",
+                    Function = "function",
+                    Method = "function",
+                    Number = "number",
+                    Object = "{}",
+                    Package = "",
+                    String = "string",
+                    Variable = "local",
+                }
+                return map[kind] or kind
+            end,
+            go = function(kind)
+                ---@type table<string, string>
+                local map = {
+                    Struct = "struct",
+                    Class = "type",
+                    Constant = "const",
+                    Function = "func",
+                    Method = "func",
+                    Field = "field",
+                }
+                return map[kind] or kind
+            end,
+            python = function(kind)
+                ---@type table<string, string>
+                local map = {
+                    Class = "class",
+                    Variable = "",
+                    Constant = "const",
+                    Function = "def",
+                    Method = "def",
+                }
+                return map[kind] or kind
+            end
+
+        }
+    }
+
     local function on_reload()
         remove_commands(cmds)
 
@@ -743,7 +884,7 @@ function M.setup()
             else
                 sidebar_open(sidebar)
             end
-            sidebar_refresh_symbols(sidebar, providers)
+            sidebar_refresh_symbols(sidebar, providers, custom_kind_to_display)
         end,
         { desc = "" }
     )
