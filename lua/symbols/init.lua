@@ -34,8 +34,8 @@ local function symbol_root()
         level = 0,
         parent = nil,
         children = {},
-        range = { start = { 0, 0 }, ["end"] = { -1, -1 } },
-        selectionRange = { start = { 0, 0 }, ["end"] = { -1, -1 } },
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = -1, character = -1 } },
+        selectionRange = { start = { line = 0, character = 0 }, ["end"] = { line = -1, character = -1 } },
         folded = false,
     }
 end
@@ -605,6 +605,31 @@ local function symbol_change_folded_rec(symbol, value)
     end
 end
 
+---@param sidebar Sidebar
+---@return integer win
+local function open_preview(sidebar)
+    local source_buf = sidebar_source_win_buf(sidebar)
+    local cursor = vim.api.nvim_win_get_cursor(sidebar.win)
+    local symbol = sidebar_current_symbol(sidebar)
+    local opts = {
+        relative = "cursor",
+        anchor = "NE",
+        width = 80,
+        height = 6 + (symbol.range["end"].line - symbol.range.start.line) + 1,
+        row = 0,
+        col = -cursor[2]-1,
+        border = "single",
+        style = "minimal",
+    }
+    local preview_win = vim.api.nvim_open_win(source_buf, false, opts)
+    vim.api.nvim_win_set_cursor(
+        preview_win, { symbol.selectionRange.start.line+1, symbol.selectionRange.start.character }
+    )
+    vim.fn.win_execute(preview_win, "normal! zt")
+    flash_highlight(preview_win, 200, 1)
+    return preview_win
+end
+
 ---@param num integer
 ---@param sidebar Sidebar
 local function sidebar_new(sidebar, num)
@@ -720,6 +745,59 @@ local function sidebar_new(sidebar, num)
         sidebar_refresh_view(sidebar)
     end, { buffer = sidebar.buf })
 
+    local current_preview_win = -1
+    local details_win = -1
+
+    vim.api.nvim_create_autocmd(
+        "CursorMoved",
+        {
+            callback = function()
+                if vim.api.nvim_win_is_valid(current_preview_win) then
+                    vim.api.nvim_win_close(current_preview_win, true)
+                    current_preview_win = -1
+                end
+                if vim.api.nvim_win_is_valid(details_win) then
+                    vim.api.nvim_win_close(details_win, true)
+                    details_win = -1
+                end
+            end,
+            buffer = sidebar.buf,
+        }
+    )
+
+    vim.keymap.set("n", "K", function()
+        if vim.api.nvim_win_is_valid(current_preview_win) then
+            vim.api.nvim_set_current_win(current_preview_win)
+        else
+            current_preview_win = open_preview(sidebar)
+        end
+    end, { buffer = sidebar.buf })
+
+    vim.keymap.set("n", "d", function()
+        if vim.api.nvim_win_is_valid(details_win) then return end
+
+        local details_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_set_option_value("bufhidden", "delete", { buf = details_buf })
+        local symbol = sidebar_current_symbol(sidebar)
+        buf_set_content(details_buf, vim.split(symbol.detail, "\n"))
+        local line_count = vim.api.nvim_buf_line_count(details_buf)
+        local opts = {
+            relative = "cursor",
+            anchor = "NW",
+            width = 80,
+            height = line_count,
+            row = 0,
+            col = 0,
+            border = "single",
+            style = "minimal",
+        }
+        details_win = vim.api.nvim_open_win(details_buf, false, opts)
+        vim.wo[details_win].wrap = true
+        -- vim.api.nvim_win_set_cursor(
+        --     preview_win, { symbol.selectionRange.start.line+1, symbol.selectionRange.start.character }
+        -- )
+    end, { buffer = sidebar.buf })
+
 
     sidebar_open(sidebar)
 end
@@ -773,7 +851,6 @@ local function find_sidebar_for_reuse(sidebars)
     end
     return nil, -1
 end
-
 
 ---@param sidebars Sidebar[]
 local function on_win_close(sidebars, win)
