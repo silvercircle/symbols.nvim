@@ -691,7 +691,7 @@ local function sidebar_new(sidebar, num)
         move_cursor_to_symbol(sidebar, symbol)
     end, { buffer = sidebar.buf })
 
-    vim.keymap.set("n", "<CR>", function()
+    local function goto_symbol()
         local symbol = sidebar_current_symbol(sidebar)
         assert(symbol ~= nil)
         vim.api.nvim_set_current_win(sidebar.source_win)
@@ -702,7 +702,10 @@ local function sidebar_new(sidebar, num)
         vim.fn.win_execute(sidebar.source_win, 'normal! zt')
         local r = symbol.range
         flash_highlight(sidebar.source_win, 400, r["end"].line - r.start.line + 1)
-    end, { buffer = sidebar.buf })
+    end
+
+    vim.keymap.set("n", "<CR>", goto_symbol, { buffer = sidebar.buf })
+    vim.keymap.set("n", "<RightMouse>", goto_symbol, { buffer = sidebar.buf })
 
     vim.keymap.set("n", "zR", function()
         symbol_change_folded_rec(sidebar.root_symbol, false)
@@ -813,6 +816,12 @@ local function sidebar_new(sidebar, num)
         -- )
     end, { buffer = sidebar.buf })
 
+    vim.keymap.set("n", "<2-LeftMouse>", function()
+        local symbol = sidebar_current_symbol(sidebar)
+        if #symbol.children == 0 then return end
+        symbol.folded = not symbol.folded
+        sidebar_refresh_view(sidebar)
+    end, { buffer = sidebar.buf })
 
     sidebar_open(sidebar)
 end
