@@ -193,7 +193,7 @@ local VimdocProvider = {
         local root = symbol_root()
         local current = root
 
-        local function updateRangeEnd(node, rangeEnd)
+        local function update_range_end(node, rangeEnd)
             if node.range ~= nil and node.level <= 3 then
                 node.range['end'] = { character = node.range['end'], line = rangeEnd }
                 node.selectionRange = node.range
@@ -215,7 +215,7 @@ local VimdocProvider = {
             end
 
             while captureLevel <= current.level do
-                updateRangeEnd(current, prevHeadingsRangeEnd)
+                update_range_end(current, prevHeadingsRangeEnd)
                 current = current.parent
                 assert(current ~= nil)
             end
@@ -251,7 +251,7 @@ local VimdocProvider = {
 
         local lineCount = vim.api.nvim_buf_line_count(0)
         while current.level > 0 do
-            updateRangeEnd(current, lineCount)
+            update_range_end(current, lineCount)
             current = current.parent
             assert(current ~= nil)
         end
@@ -435,7 +435,8 @@ local function sidebar_current_symbol(sidebar)
     return s
 end
 
-local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebar")
+local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
+local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
 
 ---@class Highlight
 ---@field group string
@@ -455,8 +456,10 @@ end
 ---@param kind_to_hl_group KindToHlGroupFun
 ---@param kind_to_display KindToDisplayFun
 ---@param custom_kind_to_display KindToDisplayFun
----@return string[], table<Symbol, integer>, Highlight[]
+---@return string[], table<Symbol, integer>, Highlight[], string[]
 local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display, custom_kind_to_display)
+    ---@type string[]
+    local details = {}
     local symbol_to_line = {}
 
     ---@param symbol Symbol
@@ -465,6 +468,7 @@ local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display, c
         if symbol.folded then return line end
         for _, sym in ipairs(symbol.children) do
             symbol_to_line[sym] = line
+            table.insert(details, sym.detail)
             line = get_symbol_to_line(sym, line + 1)
         end
         return line
@@ -506,7 +510,7 @@ local function process_symbols(root_symbol, kind_to_hl_group, kind_to_display, c
     end
     get_buf_lines_and_highlights(root_symbol, "", 1)
 
-    return  buf_lines, symbol_to_line, highlights
+    return  buf_lines, symbol_to_line, highlights, details
 end
 
 ---@param sidebar Sidebar
@@ -525,7 +529,7 @@ local function sidebar_refresh_view(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
     local ft = vim.bo[source_buf].filetype
 
-    local buf_lines, symbol_to_line, highlights = process_symbols(
+    local buf_lines, symbol_to_line, highlights, details = process_symbols(
         sidebar.root_symbol,
         provider.kind_to_hl_group,
         provider.kind_to_display,
@@ -535,6 +539,17 @@ local function sidebar_refresh_view(sidebar)
     buf_set_content(sidebar.buf, buf_lines)
     for _, hl in ipairs(highlights) do
         highlight_apply(sidebar.buf, hl)
+    end
+
+    for line, detail in ipairs(details) do
+        vim.api.nvim_buf_set_extmark(
+            sidebar.buf, SIDEBAR_EXT_NS, line-1, -1,
+            {
+                virt_text = { { detail, "Comment" } },
+                virt_text_pos = "eol",
+                hl_mode = 'combine',
+            }
+        )
     end
 end
 
@@ -878,6 +893,30 @@ function M.setup()
     ---@type table<string, table<string, KindToDisplayFun>>
     local custom_kind_to_display = {
         lsp = {
+            json = function(kind)
+                ---@type table<string, string>
+                local map = {
+                    Module = "{}",
+                    Array = "[]",
+                    Boolean = "b",
+                    String = "\"",
+                    Number = "#",
+                    Variable = "?",
+                }
+                return map[kind]
+            end,
+            yaml = function(kind)
+                ---@type table<string, string>
+                local map = {
+                    Module = "{}",
+                    Array = "[]",
+                    Boolean = "b",
+                    String = "\"",
+                    Number = "#",
+                    Variable = "?",
+                }
+                return map[kind]
+            end,
             lua = function(kind)
                 ---@type table<string, string>
                 local map = {
