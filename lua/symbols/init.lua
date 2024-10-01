@@ -127,7 +127,7 @@ local LspProvider = {
         local ok, request_id = cache.client.request("textDocument/documentSymbol", params, handler)
         if not ok then on_fail() end
 
-        LSP_REQUEST_TIMEOUT_MS = 200
+        LSP_REQUEST_TIMEOUT_MS = 500
         vim.defer_fn(
             function()
                 cache.client.cancel_request(request_id)
@@ -559,9 +559,31 @@ end
 ---@param custom_settings table<string, table<string, KindToDisplayFun>>
 local function sidebar_refresh_symbols(sidebar, providers, custom_settings)
 
-    ---@param symbol Symbol
-    local function _refresh_sidebar(symbol)
-        sidebar.root_symbol = symbol
+    ---@return Symbol?
+    local function _find_symbol_with_name(symbol, name)
+        for _, sym in ipairs(symbol.children) do
+            if sym.name == name then return sym end
+        end
+        return nil
+    end
+
+    ---@param old_symbol Symbol
+    ---@param new_symbol Symbol
+    local function preserve_folds(old_symbol, new_symbol)
+        if old_symbol.level > 0 and old_symbol.folded then return end
+        for _, new_sym in ipairs(new_symbol.children) do
+            local old_sym = _find_symbol_with_name(old_symbol, new_sym.name)
+            if old_sym ~= nil then
+                new_sym.folded = old_sym.folded
+                preserve_folds(old_sym, new_sym)
+            end
+        end
+    end
+
+    ---@param new_root Symbol
+    local function _refresh_sidebar(new_root)
+        preserve_folds(sidebar.root_symbol, new_root)
+        sidebar.root_symbol = new_root
         sidebar_refresh_view(sidebar)
     end
 
@@ -1055,15 +1077,13 @@ function M.setup()
     )
 
     vim.api.nvim_create_autocmd(
-        { "BufWritePost" },
+        { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
         {
             pattern = "*",
             callback = function(t)
                 local buf = t.buf
                 local sidebar = find_sidebar_by_source_buf(sidebars, buf)
                 if sidebar == nil then return end
-                -- print("auto refreshing symbols")
-                -- print("provider", vim.inspect(sidebar.curr_provider))
                 sidebar_refresh_symbols(sidebar, providers, custom_kind_to_display)
             end
         }
