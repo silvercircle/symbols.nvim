@@ -315,6 +315,7 @@ local function sidebar_str(sidebar)
         {
             "Sidebar(",
             "  deleted: " .. tostring(sidebar.deleted),
+            "  visible: " .. tostring(sidebar.visible),
             "  tab: " .. tostring(tab),
             "  win: " .. tostring(sidebar.win),
             "  buf: " .. tostring(sidebar.buf) .. buf_name,
@@ -866,6 +867,21 @@ local function find_sidebar_for_win(sidebars, win)
 end
 
 ---@param sidebars Sidebar[]
+---@param source_buf integer
+---@return Sidebar?
+local function find_sidebar_by_source_buf(sidebars, source_buf)
+    for _, sidebar in ipairs(sidebars) do
+        if (
+            not sidebar.deleted and
+             sidebar_source_win_buf(sidebar) == source_buf
+        ) then
+            return sidebar
+        end
+    end
+    return nil
+end
+
+---@param sidebars Sidebar[]
 ---@return Sidebar?, integer
 local function find_sidebar_for_reuse(sidebars)
     for num, sidebar in ipairs(sidebars) do
@@ -1034,6 +1050,21 @@ function M.setup()
             callback = function(t)
                 local win = tonumber(t.match, 10)
                 on_win_close(sidebars, win)
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "BufWritePost" },
+        {
+            pattern = "*",
+            callback = function(t)
+                local buf = t.buf
+                local sidebar = find_sidebar_by_source_buf(sidebars, buf)
+                if sidebar == nil then return end
+                -- print("auto refreshing symbols")
+                -- print("provider", vim.inspect(sidebar.curr_provider))
+                sidebar_refresh_symbols(sidebar, providers, custom_kind_to_display)
             end
         }
     )
