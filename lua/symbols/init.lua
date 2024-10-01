@@ -1,5 +1,5 @@
-local dev = require("symbols.dev")
 local lsp = require("symbols.lsp")
+local cfg = require("symbols.cfg")
 
 local CHAR_FOLDED = ""
 local CHAR_UNFOLDED = ""
@@ -925,7 +925,11 @@ local function on_win_close(sidebars, win)
     end
 end
 
-function M.setup()
+---@function config table
+function M.setup(config)
+    ---@type Config
+    local _config = vim.tbl_deep_extend("force", {}, cfg.default, config)
+
     local cmds = {}
 
     ---@type Sidebar[]
@@ -1007,26 +1011,34 @@ function M.setup()
         }
     }
 
-    local function on_reload()
-        remove_commands(cmds)
+    local AUTOCMD_GROUP = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
-        for _, sidebar in ipairs(sidebars) do
-            sidebar_destroy(sidebar)
+    if _config.dev.enabled then
+        local dev = require("symbols.dev")
+
+        local function reload()
+            remove_commands(cmds)
+            vim.api.nvim_del_augroup_by_id(AUTOCMD_GROUP)
+            for _, sidebar in ipairs(sidebars) do
+                sidebar_destroy(sidebar)
+            end
+            dev.reload_plugin(config)
+            print("symbols.nvim reloaded")
         end
-    end
 
-    if dev.env() == "dev" then
-        dev.setup(on_reload)
+        local function debug()
+            show_debug_in_current_window(sidebars)
+        end
 
-        create_command(
-            cmds,
-            "SymbolsDebug",
-            function() show_debug_in_current_window(sidebars) end,
-            {}
-        )
+        ---@type table<DevAction, fun()>
+        local dev_action_to_fun = {
+            reload = reload,
+            debug = debug,
+        }
 
-        vim.keymap.set("n", ",d", ":SymbolsDebug<CR>")
-        vim.keymap.set("n", ",s", ":Symbols<CR>")
+        for key, action in pairs(_config.dev.keymaps) do
+            vim.keymap.set("n", key, dev_action_to_fun[action])
+        end
     end
 
     create_command(
@@ -1068,6 +1080,7 @@ function M.setup()
     vim.api.nvim_create_autocmd(
         "WinClosed",
         {
+            group = AUTOCMD_GROUP,
             pattern = "*",
             callback = function(t)
                 local win = tonumber(t.match, 10)
@@ -1079,6 +1092,7 @@ function M.setup()
     vim.api.nvim_create_autocmd(
         { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
         {
+            group = AUTOCMD_GROUP,
             pattern = "*",
             callback = function(t)
                 local buf = t.buf

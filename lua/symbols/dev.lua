@@ -1,13 +1,4 @@
-local M = {
-    PLUGIN = "symbols",
-    ENV_VAR = "SYMBOLS_DEV",
-}
-
----@return "dev" | "prod"
-function M.env()
-    local var = os.getenv(M.ENV_VAR)
-    return var ~= nil and "dev" or "prod"
-end
+local M = { PLUGIN = "symbols", }
 
 ---@param pkg string
 local function unload_package(pkg)
@@ -19,23 +10,10 @@ local function unload_package(pkg)
 	end
 end
 
-function M.reload_plugin()
+---@param config table
+function M.reload_plugin(config)
     unload_package(M.PLUGIN)
-    require(M.PLUGIN).setup()
-end
-
-function M.setup(on_reload)
-    vim.keymap.set("n", ",r", "<cmd>luafile lua/" .. M.PLUGIN .. "/dev.lua<CR>")
-    vim.keymap.set(
-        "n",
-        ",w",
-        function()
-            print("Reloading Symbols...")
-            on_reload()
-            M.reload_plugin()
-            print("Symbols reloaded.")
-        end
-    )
+    require(M.PLUGIN).setup(config)
 end
 
 return M
