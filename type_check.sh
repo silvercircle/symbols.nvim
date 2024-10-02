@@ -1,4 +1,4 @@
-PLUGIN="my-outline"
+PLUGIN="symbols"
 
 LOGS_DIR=luals-logs
 META_DIR=luals-meta

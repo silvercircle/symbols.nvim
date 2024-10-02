@@ -10,7 +10,6 @@ local function unload_package(pkg)
 	end
 end
 
----@param config table
 function M.reload_plugin(config)
     unload_package(M.PLUGIN)
     require(M.PLUGIN).setup(config)
