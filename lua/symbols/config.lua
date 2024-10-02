@@ -19,6 +19,7 @@ local M = {}
 ---| "fold-all"
 ---| "toggle-details"
 ---| "help"
+---| "close"
 
 ---@alias KeymapsConfig table<string, SidebarAction?>
 
@@ -76,6 +77,9 @@ M.default = {
 
             ["<2-LeftMouse>"] = "toggle-fold",
             ["<RightMouse>"] = "goto-symbol",
+
+            ["q"] = "close",
+            ["?"] = "help",
         },
     },
     lsp = {

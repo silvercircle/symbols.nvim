@@ -260,6 +260,7 @@ local VimdocProvider = {
 ---@field char_config CharConfig
 ---@field show_details boolean
 ---@field show_details_pop_up boolean
+---@field keymaps KeymapsConfig
 
 ---@return Sidebar
 local function sidebar_new_obj()
@@ -278,6 +279,7 @@ local function sidebar_new_obj()
         char_config = cfg.default.sidebar.chars,
         show_details = false,
         show_details_pop_up = false,
+        keymaps = cfg.default.sidebar.keymaps,
     }
 end
 
@@ -827,6 +829,101 @@ local function sidebar_toggle_details(sidebar)
     sidebar_refresh_view(sidebar)
 end
 
+local help_options_order = {
+    "goto-symbol",
+    "preview",
+    "show-details",
+    "toggle-fold",
+    "unfold",
+    "fold",
+    "unfold-recursively",
+    "fold-recursively",
+    "unfold-one-level",
+    "fold-one-level",
+    "unfold-all",
+    "fold-all",
+    "toggle-details",
+    "help",
+    "close",
+}
+---@type table<integer, SidebarAction>
+local action_order = {}
+for num, action in ipairs(help_options_order) do
+    action_order[action] = num
+end
+
+---@param sidebar Sidebar
+local function sidebar_help(sidebar)
+    local help_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_option_value("bufhidden", "delete", { buf = help_buf })
+    vim.api.nvim_buf_set_option(sidebar.buf, "filetype", "SymbolsHelp")
+
+    local keymaps = {}
+    for i=1,#help_options_order do keymaps[i] = {} end
+
+    for key, action in pairs(sidebar.keymaps) do
+        local ord = action_order[action]
+        table.insert(keymaps[ord], key)
+    end
+
+    local keys_str = {}
+    local max_key_len = 0
+    for ord, keys in ipairs(keymaps) do
+        keys_str[ord] = vim.iter(keys):join(" / ")
+        max_key_len = math.max(max_key_len, #keys_str[ord])
+    end
+
+    local lines = {"", "Keymaps", ""}
+
+    for num=1,#help_options_order do
+        local padding = string.rep(" ", max_key_len - #keys_str[num] + 2)
+        table.insert(lines, "  " .. keys_str[num] .. padding .. help_options_order[num])
+    end
+
+    local max_width = 0
+    for line_no=1,#lines do
+        lines[line_no] = " " .. lines[line_no]
+        max_width = math.max(max_width, #lines[line_no])
+    end
+
+    buf_set_content(help_buf, lines)
+    buf_modifiable(help_buf, false)
+
+    local width = max_width + 1
+    local height = #lines + 1
+
+    local ui = vim.api.nvim_list_uis()[1]
+    local row = math.floor((ui.height - height) / 2)
+    local col = math.floor((ui.width - width) / 2)
+
+    local opts = {
+        title = "Symbols Help",
+        relative = "editor",
+        width = width,
+        height = height,
+        row = row,
+        col = col,
+        border = "single",
+        style = "minimal",
+    }
+    local help_win = vim.api.nvim_open_win(help_buf, false, opts)
+    vim.api.nvim_set_current_win(help_win)
+
+    vim.keymap.set(
+        "n", "q",
+        function() vim.api.nvim_win_close(help_win, true) end,
+        { buffer = help_buf }
+    )
+
+    vim.api.nvim_create_autocmd(
+        "BufLeave",
+        {
+            callback = function() vim.api.nvim_win_close(help_win, true) end,
+            buffer = help_buf,
+        }
+    )
+end
+
 ---@type table<SidebarAction, fun(sidebar: Sidebar)>
 local sidebar_actions = {
     ["goto-symbol"] = sidebar_goto_symbol,
@@ -845,6 +942,9 @@ local sidebar_actions = {
 
     ["toggle-fold"] = sidebar_toggle_fold,
     ["toggle-details"] = sidebar_toggle_details,
+
+    ["help"] = sidebar_help,
+    ["close"] = sidebar_close,
 }
 
 ---@param sidebar Sidebar
@@ -868,6 +968,7 @@ local function sidebar_new(sidebar, num, config)
 
     sidebar.show_details = config.show_details
     sidebar.char_config = config.chars
+    sidebar.keymaps = config.keymaps
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")

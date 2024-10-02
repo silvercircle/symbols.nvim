@@ -76,10 +76,12 @@ M.AsciiSymbols = {
     vimdoc = {
         filetype = {
             default = {
-                H1 = { kind = "#" },
-                H2 = { kind = "##" },
-                H3 = { kind = "###" },
-                Tag = { kind = "*" },
+                symbol_display = {
+                    H1 = { kind = "#" },
+                    H2 = { kind = "##" },
+                    H3 = { kind = "###" },
+                    Tag = { kind = "*" },
+                }
             }
         }
     }
