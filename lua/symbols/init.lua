@@ -1,8 +1,4 @@
-local lsp = require("symbols.lsp")
 local cfg = require("symbols.config")
-
-local CHAR_FOLDED = ""
-local CHAR_UNFOLDED = ""
 
 local M = {}
 
@@ -34,8 +30,14 @@ local function symbol_root()
         level = 0,
         parent = nil,
         children = {},
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = -1, character = -1 } },
-        selectionRange = { start = { line = 0, character = 0 }, ["end"] = { line = -1, character = -1 } },
+        range = {
+            start = { line = 0, character = 0 },
+            ["end"] = { line = -1, character = -1 }
+        },
+        selectionRange = {
+            start = { line = 0, character = 0 },
+            ["end"] = { line = -1, character = -1 }
+        },
         folded = false,
     }
 end
@@ -51,6 +53,43 @@ end
 ---@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: RefreshSymbolsFun, on_fail: fun())) | nil
 ---@field get_symbols (fun(cache: any, buf: integer): boolean, Symbol?) | nil
 
+---@enum LspSymbolKind
+local LspSymbolKind = {
+	File = 1,
+	Module = 2,
+	Namespace = 3,
+	Package = 4,
+	Class = 5,
+	Method = 6,
+	Property = 7,
+	Field = 8,
+	Constructor = 9,
+	Enum = 10,
+	Interface = 11,
+	Function = 12,
+	Variable = 13,
+	Constant = 14,
+	String = 15,
+	Number = 16,
+	Boolean = 17,
+	Array = 18,
+	Object = 19,
+	Key = 20,
+	Null = 21,
+	EnumMember = 22,
+	Struct = 23,
+	Event = 24,
+	Operator = 25,
+	TypeParameter = 26,
+}
+
+---@type table<LspSymbolKind, string>
+local LspSymbolKindString = {}
+for k, v in pairs(LspSymbolKind) do
+    LspSymbolKindString[v] = k
+end
+
+
 ---@param symbol any
 ---@param parent Symbol?
 ---@param level integer
@@ -58,7 +97,7 @@ local function rec_tidy_lsp_symbol(symbol, parent, level)
     symbol.parent = parent
     symbol.detail = symbol.detail or ""
     symbol.children = symbol.children or {}
-    symbol.kind = lsp.SymbolKindString[symbol.kind]
+    symbol.kind = LspSymbolKindString[symbol.kind]
     symbol.folded = true
     symbol.level = level
     for _, child in ipairs(symbol.children) do
@@ -215,9 +254,32 @@ local VimdocProvider = {
 ---@field root_symbol Symbol
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
----@field symbol_display_config SymbolDisplayConfig
----@field current_preview_win integer
+---@field symbol_display_config table<string, SymbolDisplayConfig>
+---@field preview_win integer
 ---@field details_win integer
+---@field char_config CharConfig
+---@field show_details boolean
+---@field show_details_pop_up boolean
+
+---@return Sidebar
+local function sidebar_new_obj()
+    return {
+        deleted = false,
+        win = -1,
+        buf = -1,
+        source_win = -1,
+        visible = false,
+        root_symbol = symbol_root(),
+        lines = {},
+        curr_provider = nil,
+        symbol_display_config = {},
+        preview_win = -1,
+        details_win = -1,
+        char_config = cfg.default.sidebar.chars,
+        show_details = false,
+        show_details_pop_up = false,
+    }
+end
 
 ---@param sidebar Sidebar
 ---@return integer
@@ -273,23 +335,6 @@ local function sidebar_str(sidebar)
         },
         "\n"
     )
-end
-
----@return Sidebar
-local function sidebar_new_obj()
-    return {
-        deleted = false,
-        win = -1,
-        buf = -1,
-        source_win = -1,
-        visible = false,
-        root_symbol = symbol_root(),
-        lines = {},
-        curr_provider = nil,
-        symbol_display_config = {},
-        current_preview_win = -1,
-        details_win = -1,
-    }
 end
 
 ---@param buf integer
@@ -403,9 +448,10 @@ local function highlight_apply(buf, hl)
 end
 
 ---@param root_symbol Symbol
----@param symbol_display_config SymbolDisplayConfig
+---@param symbol_display_config table<string, SymbolDisplayConfig>
+---@param chars CharConfig
 ---@return string[], table<Symbol, integer>, Highlight[], string[]
-local function process_symbols(root_symbol, symbol_display_config)
+local function process_symbols(root_symbol, symbol_display_config, chars)
     ---@type string[]
     local details = {}
     local symbol_to_line = {}
@@ -437,9 +483,9 @@ local function process_symbols(root_symbol, symbol_display_config)
             if #sym.children == 0 then
                 prefix = "  "
             elseif sym.folded then
-                prefix = CHAR_FOLDED .. " "
+                prefix = chars.folded .. " "
             else
-                prefix = CHAR_UNFOLDED .. " "
+                prefix = chars.unfolded .. " "
             end
             local kind_display = symbol_display_config[sym.kind].kind or sym.kind
             local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
@@ -476,7 +522,8 @@ local function sidebar_refresh_view(sidebar)
 
     local buf_lines, symbol_to_line, highlights, details = process_symbols(
         sidebar.root_symbol,
-        sidebar.symbol_display_config
+        sidebar.symbol_display_config,
+        sidebar.char_config
     )
     sidebar.lines = symbol_to_line
     buf_set_content(sidebar.buf, buf_lines)
@@ -484,15 +531,17 @@ local function sidebar_refresh_view(sidebar)
         highlight_apply(sidebar.buf, hl)
     end
 
-    for line, detail in ipairs(details) do
-        vim.api.nvim_buf_set_extmark(
-            sidebar.buf, SIDEBAR_EXT_NS, line-1, -1,
-            {
-                virt_text = { { detail, "Comment" } },
-                virt_text_pos = "eol",
-                hl_mode = 'combine',
-            }
-        )
+    if sidebar.show_details then
+        for line, detail in ipairs(details) do
+            vim.api.nvim_buf_set_extmark(
+                sidebar.buf, SIDEBAR_EXT_NS, line-1, -1,
+                {
+                    virt_text = { { detail, "Comment" } },
+                    virt_text_pos = "eol",
+                    hl_mode = 'combine',
+                }
+            )
+        end
     end
 end
 
@@ -604,7 +653,7 @@ end
 
 ---@param sidebar Sidebar
 ---@return integer win
-local function open_preview(sidebar)
+local function _open_preview(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
     local cursor = vim.api.nvim_win_get_cursor(sidebar.win)
     local symbol = sidebar_current_symbol(sidebar)
@@ -629,10 +678,10 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_preview(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.current_preview_win) then
-        vim.api.nvim_set_current_win(sidebar.current_preview_win)
+    if vim.api.nvim_win_is_valid(sidebar.preview_win) then
+        vim.api.nvim_set_current_win(sidebar.preview_win)
     else
-        sidebar.current_preview_win = open_preview(sidebar)
+        sidebar.preview_win = _open_preview(sidebar)
     end
 end
 
@@ -772,6 +821,12 @@ local function sidebar_toggle_fold(sidebar)
     sidebar_refresh_view(sidebar)
 end
 
+---@param sidebar Sidebar
+local function sidebar_toggle_details(sidebar)
+    sidebar.show_details = not sidebar.show_details
+    sidebar_refresh_view(sidebar)
+end
+
 ---@type table<SidebarAction, fun(sidebar: Sidebar)>
 local sidebar_actions = {
     ["goto-symbol"] = sidebar_goto_symbol,
@@ -789,13 +844,14 @@ local sidebar_actions = {
     ["fold-all"] = sidebar_fold_all,
 
     ["toggle-fold"] = sidebar_toggle_fold,
+    ["toggle-details"] = sidebar_toggle_details,
 }
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.current_preview_win) then
-        vim.api.nvim_win_close(sidebar.current_preview_win, true)
-        sidebar.current_preview_win = -1
+    if vim.api.nvim_win_is_valid(sidebar.preview_win) then
+        vim.api.nvim_win_close(sidebar.preview_win, true)
+        sidebar.preview_win = -1
     end
     if vim.api.nvim_win_is_valid(sidebar.details_win) then
         vim.api.nvim_win_close(sidebar.details_win, true)
@@ -809,6 +865,9 @@ end
 local function sidebar_new(sidebar, num, config)
     sidebar.deleted = false
     sidebar.source_win = vim.api.nvim_get_current_win()
+
+    sidebar.show_details = config.show_details
+    sidebar.char_config = config.chars
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")
@@ -904,6 +963,57 @@ local function on_win_close(sidebars, win)
     end
 end
 
+---@param cmds string[]
+local function setup_dev(cmds, autocmd_group, sidebars, config)
+    ---@param pkg string
+    local function unload_package(pkg)
+        local esc_pkg = pkg:gsub("([^%w])", "%%%1")
+        for module_name, _ in pairs(package.loaded) do
+            if string.find(module_name, esc_pkg) then
+                package.loaded[module_name] = nil
+            end
+        end
+    end
+
+    local function reload()
+        remove_commands(cmds)
+        vim.api.nvim_del_augroup_by_id(autocmd_group)
+        for _, sidebar in ipairs(sidebars) do
+            sidebar_destroy(sidebar)
+        end
+
+        unload_package("symbols")
+        require("symbols").setup(config)
+
+        print("symbols.nvim reloaded")
+    end
+
+    local function debug()
+        show_debug_in_current_window(sidebars)
+    end
+
+    local function show_config()
+        local buf = vim.api.nvim_create_buf(false, true)
+        local text = vim.inspect(config)
+        local lines = vim.split(text, "\n")
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        local win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_buf(win, buf)
+        buf_modifiable(buf, false)
+    end
+
+    ---@type table<DevAction, fun()>
+    local dev_action_to_fun = {
+        reload = reload,
+        debug = debug,
+        ["show-config"] = show_config
+    }
+
+    for key, action in pairs(config.dev.keymaps) do
+        vim.keymap.set("n", key, dev_action_to_fun[action])
+    end
+end
+
 function M.setup(config)
     local _config = cfg.prepare_config(config)
 
@@ -918,45 +1028,10 @@ function M.setup(config)
         VimdocProvider,
     }
 
-    local AUTOCMD_GROUP = vim.api.nvim_create_augroup("Symbols", { clear = true })
+    local autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
     if _config.dev.enabled then
-        local dev = require("symbols.dev")
-
-        local function reload()
-            remove_commands(cmds)
-            vim.api.nvim_del_augroup_by_id(AUTOCMD_GROUP)
-            for _, sidebar in ipairs(sidebars) do
-                sidebar_destroy(sidebar)
-            end
-            dev.reload_plugin(_config)
-            print("symbols.nvim reloaded")
-        end
-
-        local function debug()
-            show_debug_in_current_window(sidebars)
-        end
-
-        local function show_config()
-            local buf = vim.api.nvim_create_buf(false, true)
-            local text = vim.inspect(_config)
-            local lines = vim.split(text, "\n")
-            vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-            local win = vim.api.nvim_get_current_win()
-            vim.api.nvim_win_set_buf(win, buf)
-            buf_modifiable(buf, false)
-        end
-
-        ---@type table<DevAction, fun()>
-        local dev_action_to_fun = {
-            reload = reload,
-            debug = debug,
-            ["show-config"] = show_config
-        }
-
-        for key, action in pairs(_config.dev.keymaps) do
-            vim.keymap.set("n", key, dev_action_to_fun[action])
-        end
+        setup_dev(cmds, autocmd_group, sidebars, _config)
     end
 
     create_command(
@@ -997,7 +1072,7 @@ function M.setup(config)
     vim.api.nvim_create_autocmd(
         "WinClosed",
         {
-            group = AUTOCMD_GROUP,
+            group = autocmd_group,
             pattern = "*",
             callback = function(t)
                 local win = tonumber(t.match, 10)
@@ -1009,7 +1084,7 @@ function M.setup(config)
     vim.api.nvim_create_autocmd(
         { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
         {
-            group = AUTOCMD_GROUP,
+            group = autocmd_group,
             pattern = "*",
             callback = function(t)
                 local buf = t.buf

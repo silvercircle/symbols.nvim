@@ -1,8 +1,8 @@
 local M = {}
 
 ---@class CharConfig
----@field char_folded string
----@field char_unfolded string
+---@field folded string
+---@field unfolded string
 
 ---@alias SidebarAction
 ---| "goto-symbol"
@@ -17,6 +17,7 @@ local M = {}
 ---| "fold-recursively"
 ---| "fold-one-level"
 ---| "fold-all"
+---| "toggle-details"
 ---| "help"
 
 ---@alias KeymapsConfig table<string, SidebarAction?>
@@ -39,6 +40,7 @@ local M = {}
 ---@field keymaps table<string, DevAction>
 
 ---@class SidebarConfig
+---@field show_details boolean
 ---@field chars CharConfig
 ---@field keymaps KeymapsConfig
 
@@ -50,9 +52,10 @@ local M = {}
 ---@type Config
 M.default = {
     sidebar = {
+        show_details = false,
         chars = {
-            char_folded = "",
-            char_unfolded = "",
+            folded = "+",
+            unfolded = "-",
         },
         keymaps = {
             ["<CR>"] = "goto-symbol",
@@ -68,6 +71,8 @@ M.default = {
             ["H"] = "fold-recursively",
             ["zm"] = "fold-one-level",
             ["zM"] = "fold-all",
+
+            ["td"] = "toggle-details",
 
             ["<2-LeftMouse>"] = "toggle-fold",
             ["<RightMouse>"] = "goto-symbol",

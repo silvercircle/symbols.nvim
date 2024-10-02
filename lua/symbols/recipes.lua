@@ -1,5 +1,11 @@
 local M = {}
 
+---@type CharConfig
+M.SidebarCharsNice = {
+    folded = "",
+    unfolded = "",
+}
+
 M.LspKindJsonAscii = {
     Module = { kind = "{}" },
     Array = { kind = "[]" },
