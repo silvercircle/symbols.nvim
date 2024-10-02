@@ -384,15 +384,6 @@ local function win_set_option(win, name, value)
     vim.api.nvim_set_option_value(name, value, { win = win })
 end
 
----@param sidebar Sidebar
----@return integer
-local function sidebar_tab(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.win) then
-        return vim.api.nvim_win_get_tabpage(sidebar.win)
-    end
-    return -1
-end
-
 local function sidebar_open(sidebar)
     if sidebar.visible then return end
 
@@ -1064,18 +1055,6 @@ local function find_sidebar_for_win(sidebars, win)
 end
 
 ---@param sidebars Sidebar[]
----@param source_buf integer
----@return Sidebar?
-local function find_sidebar_by_source_buf(sidebars, source_buf)
-    for _, sidebar in ipairs(sidebars) do
-        if sidebar_source_win_buf(sidebar) == source_buf then
-            return sidebar
-        end
-    end
-    return nil
-end
-
----@param sidebars Sidebar[]
 ---@return Sidebar?, integer
 local function find_sidebar_for_reuse(sidebars)
     for num, sidebar in ipairs(sidebars) do
@@ -1221,10 +1200,12 @@ function M.setup(config)
             group = autocmd_group,
             pattern = "*",
             callback = function(t)
-                local buf = t.buf
-                local sidebar = find_sidebar_by_source_buf(sidebars, buf)
-                if sidebar == nil then return end
-                sidebar_refresh_symbols(sidebar, providers, _config)
+                local source_buf = t.buf
+                for _, sidebar in ipairs(sidebars) do
+                    if sidebar_source_win_buf(sidebar) == source_buf then
+                        sidebar_refresh_symbols(sidebar, providers, _config)
+                    end
+                end
             end
         }
     )
