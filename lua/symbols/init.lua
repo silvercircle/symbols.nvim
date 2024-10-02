@@ -653,11 +653,14 @@ end
 
 ---@param symbol Symbol
 ---@param value boolean
+---@return integer
 local function symbol_change_folded_rec(symbol, value)
+    local changes = (symbol.folded ~= value and #symbol.children > 0 and 1) or 0
     symbol.folded = value
     for _, sym in ipairs(symbol.children) do
-        symbol_change_folded_rec(sym, value)
+        changes = changes + symbol_change_folded_rec(sym, value)
     end
+    return changes
 end
 
 ---@param sidebar Sidebar
@@ -761,11 +764,14 @@ end
 ---@param sidebar Sidebar
 local function sidebar_fold_recursively(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
-    while(symbol.level > 1) do
-        symbol = symbol.parent
-        assert(symbol ~= nil)
+    local changes = symbol_change_folded_rec(symbol, true)
+    if changes == 0 then
+        while(symbol.level > 1) do
+            symbol = symbol.parent
+            assert(symbol ~= nil)
+        end
+        symbol_change_folded_rec(symbol, true)
     end
-    symbol_change_folded_rec(symbol, true)
     sidebar_refresh_view(sidebar)
     move_cursor_to_symbol(sidebar, symbol)
 end
