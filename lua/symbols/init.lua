@@ -251,7 +251,7 @@ local VimdocProvider = {
 ---@field buf integer
 ---@field source_win integer
 ---@field visible boolean
----@field root_symbol Symbol
+---@field buf_symbols table<integer, Symbol>
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
@@ -270,7 +270,7 @@ local function sidebar_new_obj()
         buf = -1,
         source_win = -1,
         visible = false,
-        root_symbol = symbol_root(),
+        buf_symbols = vim.defaulttable(symbol_root),
         lines = {},
         curr_provider = nil,
         symbol_display_config = {},
@@ -290,6 +290,22 @@ local function sidebar_source_win_buf(sidebar)
         return vim.api.nvim_win_get_buf(sidebar.source_win)
     end
     return -1
+end
+
+---@param sidebar Sidebar
+---@return Symbol
+local function sidebar_current_symbols(sidebar)
+    local source_buf = sidebar_source_win_buf(sidebar)
+    assert(source_buf ~= -1)
+    return sidebar.buf_symbols[source_buf]
+end
+
+---@parm sidebar Sidebar
+---@param new_symbol Symbol
+local function sidebar_replace_current_symbols(sidebar, new_symbol)
+    local source_buf = sidebar_source_win_buf(sidebar)
+    assert(source_buf ~= -1)
+    sidebar.buf_symbols[source_buf] = new_symbol
 end
 
 ---@return string
@@ -316,27 +332,35 @@ local function sidebar_str(sidebar)
         end
     end
 
-    local symbols_count_string = " (no symbols)"
-    local symbols_count = #sidebar.root_symbol.children
-    if symbols_count > 0 then
-        symbols_count_string = " (" .. tostring(symbols_count) .. "+ symbols)"
+
+    local lines = {
+        "Sidebar(",
+        "  deleted: " .. tostring(sidebar.deleted),
+        "  visible: " .. tostring(sidebar.visible),
+        "  tab: " .. tostring(tab),
+        "  win: " .. tostring(sidebar.win),
+        "  buf: " .. tostring(sidebar.buf) .. buf_name,
+        "  source_win: " .. tostring(sidebar.source_win),
+        "  source_win_buf: " .. tostring(source_win_buf) .. source_win_buf_name,
+        "  buf_symbols: {",
+    }
+
+    for buf, root_symbol in pairs(sidebar.buf_symbols) do
+        local _buf_name = vim.api.nvim_buf_get_name(buf)
+
+        local symbols_count_string = " (no symbols)"
+        local symbols_count = #root_symbol.children
+        if symbols_count > 0 then
+            symbols_count_string = " (" .. tostring(symbols_count) .. "+ symbols)"
+        end
+
+        local line = "    \"" .. buf .. "\" (" .. _buf_name .. ") " .. symbols_count_string
+        table.insert(lines, line)
     end
 
-    return table.concat(
-        {
-            "Sidebar(",
-            "  deleted: " .. tostring(sidebar.deleted),
-            "  visible: " .. tostring(sidebar.visible),
-            "  tab: " .. tostring(tab),
-            "  win: " .. tostring(sidebar.win),
-            "  buf: " .. tostring(sidebar.buf) .. buf_name,
-            "  source_win: " .. tostring(sidebar.source_win),
-            "  source_win_buf: " .. tostring(source_win_buf) .. source_win_buf_name,
-            "  root_symbol: ..." .. symbols_count_string,
-            ")",
-        },
-        "\n"
-    )
+    table.insert(lines, "  }")
+    table.insert(lines, ")")
+    return table.concat(lines, "\n")
 end
 
 ---@param buf integer
@@ -386,6 +410,7 @@ local function sidebar_open(sidebar)
     win_set_option(sidebar.win, "relativenumber", false)
     win_set_option(sidebar.win, "signcolumn", "no")
     win_set_option(sidebar.win, "cursorline", true)
+    win_set_option(sidebar.win, "winfixwidth", true)
 
     sidebar.visible = true
 end
@@ -427,8 +452,9 @@ local function sidebar_current_symbol(sidebar)
         return symbol, num
     end
 
+    local symbols = sidebar_current_symbols(sidebar)
     local line = vim.api.nvim_win_get_cursor(sidebar.win)[1]
-    local s, _ = _find_symbol(sidebar.root_symbol, line)
+    local s, _ = _find_symbol(symbols, line)
     return s
 end
 
@@ -523,7 +549,7 @@ local function sidebar_refresh_view(sidebar)
     assert(provider ~= nil)
 
     local buf_lines, symbol_to_line, highlights, details = process_symbols(
-        sidebar.root_symbol,
+        sidebar_current_symbols(sidebar),
         sidebar.symbol_display_config,
         sidebar.char_config
     )
@@ -575,14 +601,17 @@ local function sidebar_refresh_symbols(sidebar, providers, config)
 
     ---@param new_root Symbol
     local function _refresh_sidebar(new_root)
-        preserve_folds(sidebar.root_symbol, new_root)
-        sidebar.root_symbol = new_root
+        local current_root = sidebar_current_symbols(sidebar)
+        preserve_folds(current_root, new_root)
+        sidebar_replace_current_symbols(sidebar, new_root)
         sidebar_refresh_view(sidebar)
     end
 
     ---@param provider Provider
     local function on_fail(provider)
-        return function() print(provider.name .. " failed.") end
+        return function()
+            vim.notify(provider.name .. " failed.", vim.log.levels.ERROR)
+        end
     end
 
     local buf = sidebar_source_win_buf(sidebar)
@@ -741,7 +770,7 @@ end
 ---@param sidebar Sidebar
 local function sidebar_fold_recursively(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
-    while(symbol.level ~= 1) do
+    while(symbol.level > 1) do
         symbol = symbol.parent
         assert(symbol ~= nil)
     end
@@ -779,8 +808,9 @@ local function sidebar_unfold_one_level(sidebar)
         return min_level
     end
 
-    local level = find_level_to_unfold(sidebar.root_symbol)
-    _change_fold_at_level(sidebar.root_symbol, level, false)
+    local symbols = sidebar_current_symbols(sidebar)
+    local level = find_level_to_unfold(symbols)
+    _change_fold_at_level(symbols, level, false)
     sidebar_refresh_view(sidebar)
 end
 
@@ -797,21 +827,24 @@ local function sidebar_fold_one_level(sidebar)
         return max_level
     end
 
-    local level = find_level_to_fold(sidebar.root_symbol)
-    _change_fold_at_level(sidebar.root_symbol, level, true)
+    local symbols = sidebar_current_symbols(sidebar)
+    local level = find_level_to_fold(symbols)
+    _change_fold_at_level(symbols, level, true)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_unfold_all(sidebar)
-    symbol_change_folded_rec(sidebar.root_symbol, false)
+    local symbols = sidebar_current_symbols(sidebar)
+    symbol_change_folded_rec(symbols, false)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_all(sidebar)
-    symbol_change_folded_rec(sidebar.root_symbol, true)
-    sidebar.root_symbol.folded = false
+    local symbols = sidebar_current_symbols(sidebar)
+    symbol_change_folded_rec(symbols, true)
+    symbols.folded = false
     sidebar_refresh_view(sidebar)
 end
 
@@ -907,7 +940,9 @@ local function sidebar_help(sidebar)
         style = "minimal",
     }
     local help_win = vim.api.nvim_open_win(help_buf, false, opts)
+    win_set_option(help_win, "cursorline", true)
     vim.api.nvim_set_current_win(help_win)
+    vim.api.nvim_win_set_cursor(help_win, { 2, 0 })
 
     vim.keymap.set(
         "n", "q",
@@ -985,9 +1020,7 @@ local function sidebar_new(sidebar, num, config)
     vim.api.nvim_create_autocmd(
         { "CursorMoved" },
         {
-            callback = function(t)
-                print(vim.inspect(t))
-                sidebar_on_cursor_move(sidebar) end,
+            callback = function() sidebar_on_cursor_move(sidebar) end,
             buffer = sidebar.buf,
         }
     )
@@ -1086,7 +1119,7 @@ local function setup_dev(cmds, autocmd_group, sidebars, config)
         unload_package("symbols")
         require("symbols").setup(config)
 
-        print("symbols.nvim reloaded")
+        vim.notify("symbols.nvim reloaded", vim.log.levels.INFO)
     end
 
     local function debug()
