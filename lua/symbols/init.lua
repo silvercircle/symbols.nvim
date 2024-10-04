@@ -256,6 +256,7 @@ local VimdocProvider = {
 ---@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
 ---@field preview_win integer
+---@field preview_win_locked boolean
 ---@field details_win integer
 ---@field char_config CharConfig
 ---@field show_details boolean
@@ -275,6 +276,7 @@ local function sidebar_new_obj()
         curr_provider = nil,
         symbol_display_config = {},
         preview_win = -1,
+        preview_win_locked = false,
         details_win = -1,
         char_config = cfg.default.sidebar.chars,
         show_details = false,
@@ -406,8 +408,18 @@ local function sidebar_open(sidebar)
     sidebar.visible = true
 end
 
+---@param sidebar Sidebar
+local function sidebar_preview_close(sidebar)
+    if vim.api.nvim_win_is_valid(sidebar.preview_win) then
+        vim.api.nvim_win_close(sidebar.preview_win, true)
+        sidebar.preview_win_locked = false
+        sidebar.preview_win = -1
+    end
+end
+
 local function sidebar_close(sidebar)
     if not sidebar.visible then return end
+    sidebar_preview_close(sidebar)
     vim.api.nvim_win_close(sidebar.win, true)
     sidebar.win = -1
     sidebar.visible = false
@@ -706,6 +718,7 @@ local function sidebar_preview(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.preview_win) then
         vim.api.nvim_set_current_win(sidebar.preview_win)
     else
+        sidebar.preview_win_locked = true
         sidebar.preview_win = _open_preview(sidebar)
     end
 end
@@ -982,8 +995,13 @@ local sidebar_actions = {
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.preview_win) then
-        vim.api.nvim_win_close(sidebar.preview_win, true)
-        sidebar.preview_win = -1
+        -- After creating the preview the CursorMoved event is triggered once.
+        -- We ignore it here.
+        if sidebar.preview_win_locked then
+            sidebar.preview_win_locked = false
+        else
+            sidebar_preview_close(sidebar)
+        end
     end
     if vim.api.nvim_win_is_valid(sidebar.details_win) then
         vim.api.nvim_win_close(sidebar.details_win, true)
