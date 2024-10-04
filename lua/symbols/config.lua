@@ -18,6 +18,7 @@ local M = {}
 ---| "fold-one-level"
 ---| "fold-all"
 ---| "toggle-details"
+---| "toggle-auto-preview"
 ---| "help"
 ---| "close"
 
@@ -74,6 +75,7 @@ M.default = {
             ["zM"] = "fold-all",
 
             ["td"] = "toggle-details",
+            ["tp"] = "toggle-auto-preview",
 
             ["<2-LeftMouse>"] = "toggle-fold",
             ["<RightMouse>"] = "goto-symbol",

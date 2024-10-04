@@ -255,6 +255,7 @@ local VimdocProvider = {
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
+---@field auto_preview boolean
 ---@field preview_win integer
 ---@field preview_win_locked boolean
 ---@field details_win integer
@@ -275,6 +276,7 @@ local function sidebar_new_obj()
         lines = {},
         curr_provider = nil,
         symbol_display_config = {},
+        auto_preview = true,
         preview_win = -1,
         preview_win_locked = false,
         details_win = -1,
@@ -872,6 +874,16 @@ local function sidebar_toggle_details(sidebar)
     sidebar_refresh_view(sidebar)
 end
 
+---@param sidebar Sidebar
+local function sidebar_toggle_auto_preview(sidebar)
+    if sidebar.auto_preview then
+        sidebar_preview_close(sidebar)
+    else
+        sidebar_preview(sidebar)
+    end
+    sidebar.auto_preview = not sidebar.auto_preview
+end
+
 local help_options_order = {
     "goto-symbol",
     "preview",
@@ -886,6 +898,7 @@ local help_options_order = {
     "unfold-all",
     "fold-all",
     "toggle-details",
+    "toggle-auto-preview",
     "help",
     "close",
 }
@@ -987,6 +1000,7 @@ local sidebar_actions = {
 
     ["toggle-fold"] = sidebar_toggle_fold,
     ["toggle-details"] = sidebar_toggle_details,
+    ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
 
     ["help"] = sidebar_help,
     ["close"] = sidebar_close,
@@ -994,15 +1008,17 @@ local sidebar_actions = {
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.preview_win) then
-        -- After creating the preview the CursorMoved event is triggered once.
-        -- We ignore it here.
-        if sidebar.preview_win_locked then
-            sidebar.preview_win_locked = false
-        else
-            sidebar_preview_close(sidebar)
+    -- After creating the preview the CursorMoved event is triggered once.
+    -- We ignore it here.
+    if sidebar.preview_win_locked then
+        sidebar.preview_win_locked = false
+    else
+        sidebar_preview_close(sidebar)
+        if sidebar.auto_preview then
+            sidebar_preview(sidebar)
         end
     end
+
     if vim.api.nvim_win_is_valid(sidebar.details_win) then
         vim.api.nvim_win_close(sidebar.details_win, true)
         sidebar.details_win = -1
@@ -1037,6 +1053,7 @@ local function sidebar_new(sidebar, num, config)
         {
             callback = function() sidebar_on_cursor_move(sidebar) end,
             buffer = sidebar.buf,
+            nested = true,
         }
     )
 end
