@@ -59,6 +59,19 @@ M.LspKindBashAscii = {
     Function = { kind = "function" },
 }
 
+M.VimdocKindAscii = {
+    H1 = { kind = "#" },
+    H2 = { kind = "##" },
+    H3 = { kind = "###" },
+    Tag = { kind = "*" },
+}
+
+M.MarkdownKindAscii = {
+    H1 = { kind = "#" },
+    H2 = { kind = "##" },
+    H3 = { kind = "###" },
+}
+
 M.AsciiSymbols = {
     lsp = {
         filetype = {
@@ -73,18 +86,8 @@ M.AsciiSymbols = {
             }
         }
     },
-    vimdoc = {
-        filetype = {
-            default = {
-                symbol_display = {
-                    H1 = { kind = "#" },
-                    H2 = { kind = "##" },
-                    H3 = { kind = "###" },
-                    Tag = { kind = "*" },
-                }
-            }
-        }
-    }
+    vimdoc = { filetype = { default = { symbol_display = M.VimdocKindAscii } } },
+    markdown = { filetype = { default = { symbol_display = M.MarkdownKindAscii } } },
 }
 
 return M

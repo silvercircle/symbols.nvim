@@ -131,6 +131,17 @@ M.default = {
             }
         }
     },
+    markdown = {
+        filetype = {
+            default = {
+                symbol_display = {
+                    H1 = { highlight = "@markup.heading.1.markdown" },
+                    H2 = { highlight = "@markup.heading.2.markdown" },
+                    H3 = { highlight = "@markup.heading.3.markdown" },
+                }
+            }
+        },
+    },
     dev = {
         enabled = false,
         keymaps = {},
