@@ -2,6 +2,30 @@ local cfg = require("symbols.config")
 
 local M = {}
 
+local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
+
+---@param win integer
+---@param duration_ms integer
+local function flash_highlight(win, duration_ms, lines)
+    local bufnr = vim.api.nvim_win_get_buf(win)
+    local line = vim.api.nvim_win_get_cursor(win)[1]
+    local ns = vim.api.nvim_create_namespace("")
+    for i = 1, lines do
+        vim.api.nvim_buf_add_highlight(bufnr, ns, "Visual", line - 1 + i - 1, 0, -1)
+    end
+    local remove_highlight = function()
+        pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
+    end
+    vim.defer_fn(remove_highlight, duration_ms)
+end
+
+---@param win integer
+---@param name string
+---@param value any
+local function win_set_option(win, name, value)
+    vim.api.nvim_set_option_value(name, value, { win = win })
+end
+
 ---@class Pos
 ---@field line integer
 ---@field character integer
@@ -342,6 +366,113 @@ local MarkdownProvider = {
     end,
 }
 
+---@class Preview
+---@field win integer
+---@field locked boolean
+---@field auto_show boolean
+
+---@return Preview
+local function preview_new_obj()
+    return {
+        win = -1,
+        locked = false,
+        auto_show = false,
+    }
+end
+
+---@class PreviewOpenParams
+---@field source_buf integer
+---@field symbol Symbol
+---@field cursor integer[2]
+
+---@param preview Preview
+---@param params PreviewOpenParams
+local function _preview_open(preview, params)
+    local range = params.symbol.range
+    local selection_range = params.symbol.selectionRange
+    local opts = {
+        relative = "cursor",
+        anchor = "NE",
+        width = 80,
+        height = 6 + (range["end"].line - range.start.line) + 1,
+        row = 0,
+        col = -params.cursor[2]-1,
+        border = "single",
+        style = "minimal",
+    }
+    preview.win = vim.api.nvim_open_win(params.source_buf, false, opts)
+    vim.api.nvim_win_set_cursor(
+        preview.win,
+        { selection_range.start.line+1, selection_range.start.character }
+    )
+    vim.fn.win_execute(preview.win, "normal! zt")
+    vim.api.nvim_set_option_value("cursorline", true, { win = preview.win })
+end
+
+---@param get_params fun(): PreviewOpenParams
+---@param preview Preview
+local function preview_open(preview, get_params)
+    if vim.api.nvim_win_is_valid(preview.win) then
+        vim.api.nvim_set_current_win(preview.win)
+    else
+        preview.locked = true
+        local params = get_params()
+        _preview_open(preview, params)
+    end
+end
+
+---@param preview Preview
+local function preview_close(preview)
+    if vim.api.nvim_win_is_valid(preview.win) then
+        vim.api.nvim_win_close(preview.win, true)
+    end
+    preview.locked = false
+    preview.win = -1
+end
+
+---@param preview Preview
+---@param get_open_params fun(): PreviewOpenParams
+local function preview_toggle_auto_show(preview, get_open_params)
+    if preview.auto_show then
+        preview_close(preview)
+    else
+        preview_open(preview, get_open_params)
+    end
+    preview.auto_show = not preview.auto_show
+end
+
+---@param preview Preview
+---@param get_open_params fun(): PreviewOpenParams
+local function preview_on_cursor_move(preview, get_open_params)
+    -- After creating the preview the CursorMoved event is triggered once.
+    -- We ignore it here.
+    if preview.locked then
+        preview.locked = false
+    else
+        preview_close(preview)
+        if preview.auto_show then
+            preview_open(preview, get_open_params)
+        end
+    end
+end
+
+---@param preview Preview
+local function preview_on_win_enter(preview)
+    if (
+        vim.api.nvim_win_is_valid(preview.win) and
+        vim.api.nvim_get_current_win() ~= preview.win
+    ) then
+        preview_close(preview)
+    end
+end
+
+---@param preview Preview
+---@param win integer
+local function preview_on_win_close(preview, win)
+    if win == preview.win then
+        preview_close(preview)
+    end
+end
 
 ---@class Sidebar
 ---@field deleted boolean
@@ -353,9 +484,7 @@ local MarkdownProvider = {
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
----@field auto_preview boolean
----@field preview_win integer
----@field preview_win_locked boolean
+---@field preview Preview
 ---@field details_win integer
 ---@field char_config CharConfig
 ---@field show_details boolean
@@ -374,9 +503,7 @@ local function sidebar_new_obj()
         lines = {},
         curr_provider = nil,
         symbol_display_config = {},
-        auto_preview = false,
-        preview_win = -1,
-        preview_win_locked = false,
+        preview = preview_new_obj(),
         details_win = -1,
         char_config = cfg.default.sidebar.chars,
         show_details = false,
@@ -479,13 +606,6 @@ local function buf_set_content(buf, lines)
     buf_modifiable(buf, false)
 end
 
----@param win integer
----@param name string
----@param value any
-local function win_set_option(win, name, value)
-    vim.api.nvim_set_option_value(name, value, { win = win })
-end
-
 local function sidebar_open(sidebar)
     if sidebar.visible then return end
 
@@ -510,11 +630,7 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_preview_close(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.preview_win) then
-        vim.api.nvim_win_close(sidebar.preview_win, true)
-        sidebar.preview_win_locked = false
-        sidebar.preview_win = -1
-    end
+    preview_close(sidebar.preview)
 end
 
 local function sidebar_close(sidebar)
@@ -748,21 +864,6 @@ local function sidebar_refresh_symbols(sidebar, providers, config)
     end
 end
 
----@param win integer
----@param duration_ms integer
-local function flash_highlight(win, duration_ms, lines)
-    local bufnr = vim.api.nvim_win_get_buf(win)
-    local line = vim.api.nvim_win_get_cursor(win)[1]
-    local ns = vim.api.nvim_create_namespace("")
-    for i = 1, lines do
-        vim.api.nvim_buf_add_highlight(bufnr, ns, "Visual", line - 1 + i - 1, 0, -1)
-    end
-    local remove_highlight = function()
-        pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
-    end
-    vim.defer_fn(remove_highlight, duration_ms)
-end
-
 ---@param symbol Symbol
 ---@param value boolean
 ---@return integer
@@ -789,38 +890,19 @@ local function sidebar_goto_symbol(sidebar)
 end
 
 ---@param sidebar Sidebar
----@return integer win
-local function _open_preview(sidebar)
-    local source_buf = sidebar_source_win_buf(sidebar)
-    local cursor = vim.api.nvim_win_get_cursor(sidebar.win)
-    local symbol = sidebar_current_symbol(sidebar)
-    local opts = {
-        relative = "cursor",
-        anchor = "NE",
-        width = 80,
-        height = 6 + (symbol.range["end"].line - symbol.range.start.line) + 1,
-        row = 0,
-        col = -cursor[2]-1,
-        border = "single",
-        style = "minimal",
-    }
-    local preview_win = vim.api.nvim_open_win(source_buf, false, opts)
-    vim.api.nvim_win_set_cursor(
-        preview_win, { symbol.selectionRange.start.line+1, symbol.selectionRange.start.character }
-    )
-    vim.fn.win_execute(preview_win, "normal! zt")
-    flash_highlight(preview_win, 200, 1)
-    return preview_win
+local function _sidebar_preview_open_params(sidebar)
+    return function()
+        return {
+            source_buf = sidebar_source_win_buf(sidebar),
+            cursor = vim.api.nvim_win_get_cursor(sidebar.win),
+            symbol = sidebar_current_symbol(sidebar),
+        }
+    end
 end
 
 ---@param sidebar Sidebar
-local function sidebar_preview(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.preview_win) then
-        vim.api.nvim_set_current_win(sidebar.preview_win)
-    else
-        sidebar.preview_win_locked = true
-        sidebar.preview_win = _open_preview(sidebar)
-    end
+local function sidebar_preview_open(sidebar)
+    preview_open(sidebar.preview, _sidebar_preview_open_params(sidebar))
 end
 
 ---@param sidebar Sidebar
@@ -974,12 +1056,7 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_preview(sidebar)
-    if sidebar.auto_preview then
-        sidebar_preview_close(sidebar)
-    else
-        sidebar_preview(sidebar)
-    end
-    sidebar.auto_preview = not sidebar.auto_preview
+    preview_toggle_auto_show(sidebar.preview, _sidebar_preview_open_params(sidebar))
 end
 
 local help_options_order = {
@@ -1083,7 +1160,7 @@ end
 ---@type table<SidebarAction, fun(sidebar: Sidebar)>
 local sidebar_actions = {
     ["goto-symbol"] = sidebar_goto_symbol,
-    ["preview"] = sidebar_preview,
+    ["preview"] = sidebar_preview_open,
     ["show-details"] = sidebar_show_details,
 
     ["unfold"] = sidebar_unfold,
@@ -1106,16 +1183,7 @@ local sidebar_actions = {
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
-    -- After creating the preview the CursorMoved event is triggered once.
-    -- We ignore it here.
-    if sidebar.preview_win_locked then
-        sidebar.preview_win_locked = false
-    else
-        sidebar_preview_close(sidebar)
-        if sidebar.auto_preview then
-            sidebar_preview(sidebar)
-        end
-    end
+    preview_on_cursor_move(sidebar.preview, _sidebar_preview_open_params(sidebar))
 
     if vim.api.nvim_win_is_valid(sidebar.details_win) then
         vim.api.nvim_win_close(sidebar.details_win, true)
@@ -1152,6 +1220,25 @@ local function sidebar_new(sidebar, num, config)
             callback = function() sidebar_on_cursor_move(sidebar) end,
             buffer = sidebar.buf,
             nested = true,
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "WinEnter" },
+        {
+            group = global_autocmd_group,
+            callback = function() preview_on_win_enter(sidebar.preview) end,
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "WinClosed" },
+        {
+            group = global_autocmd_group,
+            callback = function(e)
+                local win = tonumber(e.match, 10)
+                preview_on_win_close(sidebar.preview, win)
+            end,
         }
     )
 end
@@ -1281,10 +1368,8 @@ function M.setup(config)
         MarkdownProvider,
     }
 
-    local autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
-
     if _config.dev.enabled then
-        setup_dev(cmds, autocmd_group, sidebars, _config)
+        setup_dev(cmds, global_autocmd_group, sidebars, _config)
     end
 
     create_command(
@@ -1325,7 +1410,7 @@ function M.setup(config)
     vim.api.nvim_create_autocmd(
         "WinClosed",
         {
-            group = autocmd_group,
+            group = global_autocmd_group,
             pattern = "*",
             callback = function(t)
                 local win = tonumber(t.match, 10)
@@ -1337,7 +1422,7 @@ function M.setup(config)
     vim.api.nvim_create_autocmd(
         { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
         {
-            group = autocmd_group,
+            group = global_autocmd_group,
             pattern = "*",
             callback = function(t)
                 local source_buf = t.buf
