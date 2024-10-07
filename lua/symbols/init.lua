@@ -474,7 +474,27 @@ local function preview_on_win_close(preview, win)
     end
 end
 
+---@class CursorState
+---@field hide boolean
+---@field hidden boolean
+---@field original string
+
+---@class GlobalState
+---@field cursor CursorState
+
+---@return GlobalState
+local function global_state_new()
+    return {
+        cursor = {
+            hide = false,
+            hidden = false,
+            origina = vim.o.guicursor,
+        }
+    }
+end
+
 ---@class Sidebar
+---@field gs GlobalState
 ---@field deleted boolean
 ---@field win integer
 ---@field buf integer
@@ -494,6 +514,7 @@ end
 ---@return Sidebar
 local function sidebar_new_obj()
     return {
+        gs = global_state_new(),
         deleted = false,
         win = -1,
         buf = -1,
@@ -1059,6 +1080,32 @@ local function sidebar_toggle_auto_preview(sidebar)
     preview_toggle_auto_show(sidebar.preview, _sidebar_preview_open_params(sidebar))
 end
 
+---@param cursor CursorState
+local function hide_cursor(cursor)
+    if not cursor.hidden then
+        local cur = vim.o.guicursor:match("n.-:(.-)[-,]")
+        vim.opt.guicursor:append("n:" .. cur .. "-Cursorline")
+        cursor.hidden = true
+    end
+end
+
+---@param cursor CursorState
+local function reset_cursor(cursor)
+    vim.o.guicursor = cursor.original
+    cursor.hidden = false
+end
+
+---@param sidebar Sidebar
+local function sidebar_toggle_cursor_hiding(sidebar)
+    local cursor = sidebar.gs.cursor
+    if cursor.hide then
+        reset_cursor(cursor)
+    else
+        hide_cursor(cursor)
+    end
+    cursor.hide = not cursor.hide
+end
+
 local help_options_order = {
     "goto-symbol",
     "preview",
@@ -1074,6 +1121,7 @@ local help_options_order = {
     "fold-all",
     "toggle-details",
     "toggle-auto-preview",
+    "toggle-cursor-hiding",
     "help",
     "close",
 }
@@ -1176,6 +1224,7 @@ local sidebar_actions = {
     ["toggle-fold"] = sidebar_toggle_fold,
     ["toggle-details"] = sidebar_toggle_details,
     ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
+    ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
 
     ["help"] = sidebar_help,
     ["close"] = sidebar_close,
@@ -1194,10 +1243,12 @@ end
 ---@param sidebar Sidebar
 ---@param num integer
 ---@param config SidebarConfig
-local function sidebar_new(sidebar, num, config)
+---@param gs GlobalState
+local function sidebar_new(sidebar, num, config, gs)
     sidebar.deleted = false
     sidebar.source_win = vim.api.nvim_get_current_win()
 
+    sidebar.gs = gs
     sidebar.show_details = config.show_details
     sidebar.char_config = config.chars
     sidebar.keymaps = config.keymaps
@@ -1353,10 +1404,31 @@ local function setup_dev(cmds, autocmd_group, sidebars, config)
     end
 end
 
+---@param sidebars Sidebar[]
+---@param cursor CursorState
+local function on_win_enter_hide_cursor(sidebars, cursor)
+    local win = vim.api.nvim_get_current_win()
+    for _, sidebar in ipairs(sidebars) do
+        if sidebar.win == win then
+            hide_cursor(cursor)
+            return
+        end
+    end
+end
+
 function M.setup(config)
     local _config = cfg.prepare_config(config)
 
     local cmds = {}
+
+    ---@type GlobalState
+    local gs = {
+        cursor = {
+            hide = _config.hide_cursor,
+            hidden = false,
+            original = vim.o.guicursor,
+        }
+    }
 
     ---@type Sidebar[]
     local sidebars = {}
@@ -1386,7 +1458,7 @@ function M.setup(config)
                     table.insert(sidebars, sidebar)
                     num = #sidebars
                 end
-                sidebar_new(sidebar, num, _config.sidebar)
+                sidebar_new(sidebar, num, _config.sidebar, gs)
             end
             sidebar_open(sidebar)
             sidebar_refresh_symbols(sidebar, providers, _config)
@@ -1405,6 +1477,32 @@ function M.setup(config)
             end
         end,
         { desc = "" }
+    )
+
+    vim.api.nvim_create_autocmd(
+        "WinEnter",
+        {
+            group = global_autocmd_group,
+            pattern = "*",
+            callback = function()
+                if gs.cursor.hide then
+                    on_win_enter_hide_cursor(sidebars, gs.cursor)
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        "WinLeave",
+        {
+            group = global_autocmd_group,
+            pattern = "*",
+            callback = function()
+                if gs.cursor.hide or gs.cursor.hidden then
+                    reset_cursor(gs.cursor)
+                end
+            end
+        }
     )
 
     vim.api.nvim_create_autocmd(

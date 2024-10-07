@@ -59,6 +59,11 @@ M.LspKindBashAscii = {
     Function = { kind = "function" },
 }
 
+M.LspKindCssAscii = {
+    Class = { kind = "" },
+    Module = { kind = "" },
+}
+
 M.VimdocKindAscii = {
     H1 = { kind = "#" },
     H2 = { kind = "##" },
@@ -72,18 +77,33 @@ M.MarkdownKindAscii = {
     H3 = { kind = "###" },
 }
 
+M.LspKindJavascriptAscii = {
+    Function = { kind = "function" },
+    Constant = { kind = "const" },
+    Variable = { kind = "let" },
+    Property = { kind = "" },
+}
+
+M.LspKindTypescriptAscii = {
+    Function = { kind = "function" },
+    Constant = { kind = "const" },
+    Variable = { kind = "let" },
+    Property = { kind = "" },
+}
+
 M.AsciiSymbols = {
     lsp = {
         filetype = {
-            json = { symbol_display = M.LspKindJsonAscii, },
-            yaml = { symbol_display = M.LspKindYamlAscii, },
-            lua = { symbol_display = M.LspKindLuaAscii, },
-            go = { symbol_display = M.LspKindGoAscii, },
-            python = { symbol_display = M.LspKindPythonAscii, },
-            sh = { symbol_display = M.LspKindBashAscii, },
-            default = {
-                symbol_display = {}
-            }
+            json = { symbol_display = M.LspKindJsonAscii },
+            yaml = { symbol_display = M.LspKindYamlAscii },
+            lua = { symbol_display = M.LspKindLuaAscii },
+            go = { symbol_display = M.LspKindGoAscii },
+            python = { symbol_display = M.LspKindPythonAscii },
+            sh = { symbol_display = M.LspKindBashAscii },
+            css = { symbol_display = M.LspKindCssAscii },
+            javascript = { symbol_display = M.LspKindJavascriptAscii },
+            typescript = { symbol_display = M.LspKindTypescriptAscii },
+            default = { symbol_display = {} },
         }
     },
     vimdoc = { filetype = { default = { symbol_display = M.VimdocKindAscii } } },

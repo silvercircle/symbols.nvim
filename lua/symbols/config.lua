@@ -19,6 +19,7 @@ local M = {}
 ---| "fold-all"
 ---| "toggle-details"
 ---| "toggle-auto-preview"
+---| "toggle-cursor-hiding"
 ---| "help"
 ---| "close"
 
@@ -47,12 +48,14 @@ local M = {}
 ---@field keymaps KeymapsConfig
 
 ---@class Config
+---@field hide_cursor boolean
 ---@field sidebar SidebarConfig
 ---@field lsp LspConfig
 ---@field dev DevConfig
 
 ---@type Config
 M.default = {
+    hide_cursor = false,
     sidebar = {
         show_details = false,
         chars = {
@@ -76,6 +79,7 @@ M.default = {
 
             ["td"] = "toggle-details",
             ["tp"] = "toggle-auto-preview",
+            ["tc"] = "toggle-cursor-hiding",
 
             ["<2-LeftMouse>"] = "toggle-fold",
             ["<RightMouse>"] = "goto-symbol",
