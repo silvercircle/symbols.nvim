@@ -36,7 +36,19 @@ local M = {}
 ---@field timeout_ms integer
 ---@field filetype table<string, LspFileTypeConfig>
 
----@alias DevAction "reload" | "debug" | "show-config"
+---@alias DevAction
+---| "reload"
+---| "debug"
+---| "show-config"
+
+---@class PreviewConfig
+---@field show_line_number boolean
+---@field auto_size boolean
+---@field auto_size_extra_lines integer
+---@field fixed_size_height integer
+---@field min_window_height integer
+---@field max_window_height integer
+---@field window_width integer
 
 ---@class DevConfig
 ---@field enabled boolean
@@ -45,6 +57,7 @@ local M = {}
 ---@class SidebarConfig
 ---@field show_details boolean
 ---@field chars CharConfig
+---@field preview PreviewConfig
 ---@field keymaps KeymapsConfig
 
 ---@class Config
@@ -61,6 +74,15 @@ M.default = {
         chars = {
             folded = "+",
             unfolded = "-",
+        },
+        preview = {
+            show_line_number = false,
+            auto_size = true,
+            auto_size_extra_lines = 6,
+            fixed_size_height = 12,
+            min_window_height = 7,
+            max_window_height = 30,
+            window_width = 100,
         },
         keymaps = {
             ["<CR>"] = "goto-symbol",

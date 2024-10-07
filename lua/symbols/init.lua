@@ -381,26 +381,46 @@ local function preview_new_obj()
 end
 
 ---@class PreviewOpenParams
+---@field source_win integer
 ---@field source_buf integer
 ---@field symbol Symbol
 ---@field cursor integer[2]
+---@field config PreviewConfig
 
 ---@param preview Preview
 ---@param params PreviewOpenParams
 local function _preview_open(preview, params)
+    local config = params.config
     local range = params.symbol.range
     local selection_range = params.symbol.selectionRange
+
+    local height = config.fixed_size_height
+    if config.auto_size then
+        height = config.auto_size_extra_lines + (range["end"].line - range.start.line) + 1
+        height = math.max(config.min_window_height, height)
+        height = math.min(config.max_window_height, height)
+    end
+    local max_height = vim.api.nvim_win_get_height(params.source_win) - 3
+    height = math.min(max_height, height)
+
+    local max_width = vim.api.nvim_win_get_width(params.source_win) - 2
+    local width = config.window_width
+    width = math.min(max_width, width)
+
     local opts = {
         relative = "cursor",
         anchor = "NE",
-        width = 80,
-        height = 6 + (range["end"].line - range.start.line) + 1,
+        width = width,
+        height = height,
         row = 0,
         col = -params.cursor[2]-1,
         border = "single",
         style = "minimal",
     }
     preview.win = vim.api.nvim_open_win(params.source_buf, false, opts)
+    if params.config.show_line_number then
+        vim.wo[preview.win].number = true
+    end
     vim.api.nvim_win_set_cursor(
         preview.win,
         { selection_range.start.line+1, selection_range.start.character }
@@ -504,6 +524,7 @@ end
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
+---@field preview_config PreviewConfig
 ---@field preview Preview
 ---@field details_win integer
 ---@field char_config CharConfig
@@ -912,11 +933,14 @@ end
 
 ---@param sidebar Sidebar
 local function _sidebar_preview_open_params(sidebar)
+    ---@return PreviewOpenParams
     return function()
         return {
+            source_win = sidebar.source_win,
             source_buf = sidebar_source_win_buf(sidebar),
             cursor = vim.api.nvim_win_get_cursor(sidebar.win),
             symbol = sidebar_current_symbol(sidebar),
+            config = sidebar.preview_config,
         }
     end
 end
@@ -1249,6 +1273,7 @@ local function sidebar_new(sidebar, num, config, gs)
     sidebar.source_win = vim.api.nvim_get_current_win()
 
     sidebar.gs = gs
+    sidebar.preview_config = config.preview
     sidebar.show_details = config.show_details
     sidebar.char_config = config.chars
     sidebar.keymaps = config.keymaps
