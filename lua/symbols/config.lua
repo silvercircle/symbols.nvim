@@ -41,6 +41,10 @@ local M = {}
 ---| "debug"
 ---| "show-config"
 
+---@alias PreviewAction
+---| "close"
+---| "goto-code"
+
 ---@class PreviewConfig
 ---@field show_line_number boolean
 ---@field auto_size boolean
@@ -49,6 +53,7 @@ local M = {}
 ---@field min_window_height integer
 ---@field max_window_height integer
 ---@field window_width integer
+---@field keymaps table<string, PreviewAction>
 
 ---@class DevConfig
 ---@field enabled boolean
@@ -83,6 +88,9 @@ M.default = {
             min_window_height = 7,
             max_window_height = 30,
             window_width = 100,
+            keymaps = {
+                ["q"] = "close",
+            },
         },
         keymaps = {
             ["<CR>"] = "goto-symbol",

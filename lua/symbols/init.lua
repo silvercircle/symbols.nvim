@@ -370,6 +370,9 @@ local MarkdownProvider = {
 ---@field win integer
 ---@field locked boolean
 ---@field auto_show boolean
+---@field source_win integer
+---@field source_buf integer
+---@field keymaps_to_remove string[]
 
 ---@return Preview
 local function preview_new_obj()
@@ -377,6 +380,8 @@ local function preview_new_obj()
         win = -1,
         locked = false,
         auto_show = false,
+        source_buf = -1,
+        keymaps_to_remove = {},
     }
 end
 
@@ -386,6 +391,34 @@ end
 ---@field symbol Symbol
 ---@field cursor integer[2]
 ---@field config PreviewConfig
+
+---@param preview Preview
+local function preview_close(preview)
+    if vim.api.nvim_win_is_valid(preview.win) then
+        vim.api.nvim_win_close(preview.win, true)
+    end
+    preview.locked = false
+    preview.win = -1
+    for _, key in ipairs(preview.keymaps_to_remove) do
+        vim.keymap.del("n", key, { buffer = preview.source_buf })
+    end
+    preview.keymaps_to_remove = {}
+    preview.source_buf = -1
+end
+
+---@param preview Preview
+local function preview_goto_symbol(preview)
+    local cursor = vim.api.nvim_win_get_cursor(preview.win)
+    vim.api.nvim_win_set_cursor(preview.source_win, cursor)
+    vim.api.nvim_set_current_win(preview.source_win)
+    vim.fn.win_execute(preview.source_win, "normal! zz")
+end
+
+---@type table<PreviewAction, fun(preview: Preview)>
+local preview_actions = {
+    ["close"] = preview_close,
+    ["goto-code"] = preview_goto_symbol,
+}
 
 ---@param preview Preview
 ---@param params PreviewOpenParams
@@ -427,6 +460,14 @@ local function _preview_open(preview, params)
     )
     vim.fn.win_execute(preview.win, "normal! zt")
     vim.api.nvim_set_option_value("cursorline", true, { win = preview.win })
+
+    preview.source_win = params.source_win
+    preview.source_buf = params.source_buf
+    for keymap, action in pairs(config.keymaps) do
+        local fn = function() preview_actions[action](preview) end
+        vim.keymap.set("n", keymap, fn, { buffer = params.source_buf })
+        table.insert(preview.keymaps_to_remove, keymap)
+    end
 end
 
 ---@param get_params fun(): PreviewOpenParams
@@ -439,15 +480,6 @@ local function preview_open(preview, get_params)
         local params = get_params()
         _preview_open(preview, params)
     end
-end
-
----@param preview Preview
-local function preview_close(preview)
-    if vim.api.nvim_win_is_valid(preview.win) then
-        vim.api.nvim_win_close(preview.win, true)
-    end
-    preview.locked = false
-    preview.win = -1
 end
 
 ---@param preview Preview
