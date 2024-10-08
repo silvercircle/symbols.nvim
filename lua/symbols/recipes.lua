@@ -107,4 +107,43 @@ M.AsciiSymbols = {
     markdown = { filetype = { default = { symbol_display = M.MarkdownKindAscii } } },
 }
 
+M.FancySymbols = {
+    lsp = {
+        filetype = {
+            default = {
+                symbol_display = {
+                    File = { kind = "󰈔" },
+                    Module = { kind = "󰆧" },
+                    Namespace = { kind = "󰅪" },
+                    Package = { kind = "󰏗" },
+                    Class = { kind = "𝓒" },
+                    Method = { kind = "ƒ" },
+                    Property = { kind = "" },
+                    Field = { kind = "󰆨" },
+                    Constructor = { kind = "" },
+                    Enum = { kind = "ℰ" },
+                    Interface = { kind = "󰜰" },
+                    Function = { kind = "" },
+                    Variable = { kind = "" },
+                    Constant = { kind = "" },
+                    String = { kind = "𝓐" },
+                    Number = { kind = "#" },
+                    Boolean = { kind = "⊨" },
+                    Array = { kind = "󰅪" },
+                    Object = { kind = "⦿" },
+                    Key = { kind = "🔐" },
+                    Null = { kind = "NULL" },
+                    EnumMember = { kind = "" },
+                    Struct = { kind = "𝓢" },
+                    Event = { kind = "🗲" },
+                    Operator = { kind = "+" },
+                    TypeParameter = { kind = "𝙏" },
+                    Component = { kind = "󰅴" },
+                    Fragment = { kind = "󰅴" },
+                }
+            }
+        }
+    }
+}
+
 return M
