@@ -294,18 +294,21 @@ local MarkdownProvider = {
                 (atx_heading (atx_h1_marker) heading_content: (_) @h1)
                 (atx_heading (atx_h2_marker) heading_content: (_) @h2)
                 (atx_heading (atx_h3_marker) heading_content: (_) @h3)
+                (atx_heading (atx_h4_marker) heading_content: (_) @h4)
+                (atx_heading (atx_h5_marker) heading_content: (_) @h5)
+                (atx_heading (atx_h6_marker) heading_content: (_) @h6)
             ]
         ]]
         local query = vim.treesitter.query.parse("markdown", queryString)
 
-        local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3 }
-        local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3" }
+        local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3, h4 = 4, h5 = 5, h6 = 6 }
+        local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", h4 = "H4", h5 = "H5", h6 = "H6" }
 
         local root = symbol_root()
         local current = root
 
         local function update_range_end(node, rangeEnd)
-            if node.range ~= nil and node.level <= 3 then
+            if node.range ~= nil and node.level <= 6 then
                 node.range["end"] = { character = node.range["end"], line = rangeEnd }
                 node.selectionRange = node.range
             end
@@ -320,7 +323,7 @@ local MarkdownProvider = {
 
             local prevHeadingsRangeEnd = row1 - 1
             local rangeStart = row1
-            if captureLevel <= 2 then
+            if captureLevel <= 5 then
                 prevHeadingsRangeEnd = prevHeadingsRangeEnd - 1
                 rangeStart = rangeStart - 1
             end

@@ -119,7 +119,7 @@ M.default = {
         },
     },
     lsp = {
-        timeout_ms = 500,
+        timeout_ms = 1000,
         filetype = {
             default = {
                 symbol_display = {
@@ -172,6 +172,9 @@ M.default = {
                     H1 = { highlight = "@markup.heading.1.markdown" },
                     H2 = { highlight = "@markup.heading.2.markdown" },
                     H3 = { highlight = "@markup.heading.3.markdown" },
+                    H4 = { highlight = "@markup.heading.4.markdown" },
+                    H5 = { highlight = "@markup.heading.5.markdown" },
+                    H6 = { highlight = "@markup.heading.6.markdown" },
                 }
             }
         },

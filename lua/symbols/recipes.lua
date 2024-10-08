@@ -75,6 +75,9 @@ M.MarkdownKindAscii = {
     H1 = { kind = "#" },
     H2 = { kind = "##" },
     H3 = { kind = "###" },
+    H4 = { kind = "####" },
+    H5 = { kind = "#####" },
+    H6 = { kind = "######" },
 }
 
 M.LspKindJavascriptAscii = {
