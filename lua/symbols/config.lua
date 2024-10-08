@@ -10,7 +10,7 @@ local M = {}
 ---@alias SidebarAction
 ---| "goto-symbol"
 ---| "preview"
----| "show-details"
+---| "toggle-show-details"
 ---| "toggle-fold"
 ---| "unfold"
 ---| "unfold-recursively"
@@ -21,6 +21,7 @@ local M = {}
 ---| "fold-one-level"
 ---| "fold-all"
 ---| "toggle-details"
+---| "toggle-auto-details"
 ---| "toggle-auto-preview"
 ---| "toggle-cursor-hiding"
 ---| "help"
@@ -103,7 +104,7 @@ M.default = {
         keymaps = {
             ["<CR>"] = "goto-symbol",
             ["K"] = "preview",
-            ["d"] = "show-details",
+            ["d"] = "toggle-show-details",
 
             ["l"] = "unfold",
             ["L"] = "unfold-recursively",
@@ -116,6 +117,7 @@ M.default = {
             ["zM"] = "fold-all",
 
             ["td"] = "toggle-details",
+            ["tD"] = "toggle-auto-details",
             ["tp"] = "toggle-auto-preview",
             ["tc"] = "toggle-cursor-hiding",
 
