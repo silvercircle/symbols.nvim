@@ -3,6 +3,9 @@ local M = {}
 ---@class CharConfig
 ---@field folded string
 ---@field unfolded string
+---@field guide_vert string
+---@field guide_middle_item string
+---@field guide_last_item string
 
 ---@alias SidebarAction
 ---| "goto-symbol"
@@ -61,6 +64,7 @@ local M = {}
 
 ---@class SidebarConfig
 ---@field show_details boolean
+---@field show_guide_lines boolean
 ---@field chars CharConfig
 ---@field preview PreviewConfig
 ---@field keymaps KeymapsConfig
@@ -76,9 +80,13 @@ M.default = {
     hide_cursor = false,
     sidebar = {
         show_details = false,
+        show_guide_lines = false,
         chars = {
-            folded = "+",
-            unfolded = "-",
+            folded = "",
+            unfolded = "",
+            guide_vert = "│",
+            guide_middle_item = "├",
+            guide_last_item = "└",
         },
         preview = {
             show_line_number = false,

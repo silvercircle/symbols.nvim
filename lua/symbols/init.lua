@@ -565,6 +565,7 @@ end
 ---@field char_config CharConfig
 ---@field show_details boolean
 ---@field show_details_pop_up boolean
+---@field show_guide_lines boolean
 ---@field keymaps KeymapsConfig
 
 ---@return Sidebar
@@ -585,6 +586,7 @@ local function sidebar_new_obj()
         char_config = cfg.default.sidebar.chars,
         show_details = false,
         show_details_pop_up = false,
+        show_guide_lines = false,
         keymaps = cfg.default.sidebar.keymaps,
     }
 end
@@ -774,8 +776,9 @@ end
 ---@param root_symbol Symbol
 ---@param symbol_display_config table<string, SymbolDisplayConfig>
 ---@param chars CharConfig
+---@param show_guide_lines boolean
 ---@return string[], table<Symbol, integer>, Highlight[], string[]
-local function process_symbols(root_symbol, symbol_display_config, chars)
+local function process_symbols(root_symbol, symbol_display_config, chars, show_guide_lines)
     ---@type string[]
     local details = {}
     local symbol_to_line = {}
@@ -802,10 +805,18 @@ local function process_symbols(root_symbol, symbol_display_config, chars)
     ---@return integer
     local function get_buf_lines_and_highlights(symbol, indent, line_nr)
         if symbol.folded then return line_nr end
-        for _, sym in ipairs(symbol.children) do
+        for sym_i, sym in ipairs(symbol.children) do
             local prefix
             if #sym.children == 0 then
-                prefix = "  "
+                if show_guide_lines and sym.level > 1 then
+                    if sym_i == #symbol.children then
+                        prefix = chars.guide_last_item .. " "
+                    else
+                        prefix = chars.guide_middle_item .. " "
+                    end
+                else
+                    prefix = "  "
+                end
             elseif sym.folded then
                 prefix = chars.folded .. " "
             else
@@ -822,7 +833,13 @@ local function process_symbols(root_symbol, symbol_display_config, chars)
                 col_end = #indent + #prefix + #kind_display
             }
             table.insert(highlights, hl)
-            line_nr = get_buf_lines_and_highlights(sym, indent .. "  ", line_nr + 1)
+            local new_indent
+            if show_guide_lines and sym.level > 1 and sym_i ~= #symbol.children then
+                new_indent = indent .. chars.guide_vert .. " "
+            else
+                new_indent = indent .. "  "
+            end
+            line_nr = get_buf_lines_and_highlights(sym, new_indent, line_nr + 1)
         end
         return line_nr
     end
@@ -847,7 +864,8 @@ local function sidebar_refresh_view(sidebar)
     local buf_lines, symbol_to_line, highlights, details = process_symbols(
         sidebar_current_symbols(sidebar),
         sidebar.symbol_display_config,
-        sidebar.char_config
+        sidebar.char_config,
+        sidebar.show_guide_lines
     )
     sidebar.lines = symbol_to_line
     buf_set_content(sidebar.buf, buf_lines)
@@ -1310,6 +1328,7 @@ local function sidebar_new(sidebar, num, config, gs)
     sidebar.gs = gs
     sidebar.preview_config = config.preview
     sidebar.show_details = config.show_details
+    sidebar.show_guide_lines = config.show_guide_lines
     sidebar.char_config = config.chars
     sidebar.keymaps = config.keymaps
 
