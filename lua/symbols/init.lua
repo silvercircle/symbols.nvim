@@ -44,6 +44,12 @@ end
 ---@field line integer
 ---@field character integer
 
+---@param point [integer, integer]
+---@return Pos
+local function to_pos(point)
+    return { line = point[1] - 1, character = point[2] }
+end
+
 ---@class Range
 ---@field start Pos
 ---@field end Pos
@@ -219,11 +225,12 @@ local VimdocProvider = {
         local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", tag = "Tag" }
 
         local root = symbol_root()
+        root.captureLevel = 0
         local current = root
 
         local function update_range_end(node, rangeEnd)
-            if node.range ~= nil and node.level <= 3 then
-                node.range["end"] = { character = node.range["end"], line = rangeEnd }
+            if node.range ~= nil and node.captureLevel <= 3 then
+                node.range["end"].line = rangeEnd
                 node.selectionRange = node.range
             end
         end
@@ -242,7 +249,7 @@ local VimdocProvider = {
                 rangeStart = rangeStart - 1
             end
 
-            while captureLevel <= current.level do
+            while captureLevel <= current.captureLevel do
                 update_range_end(current, prevHeadingsRangeEnd)
                 current = current.parent
                 assert(current ~= nil)
@@ -264,8 +271,10 @@ local VimdocProvider = {
                 children = {},
 
                 parent = current,
-                level = captureLevel,
+                level = current.level + 1,
                 folded = true,
+
+                captureLevel = captureLevel,
             }
 
             table.insert(current.children, new)
@@ -273,7 +282,7 @@ local VimdocProvider = {
         end
 
         local lineCount = vim.api.nvim_buf_line_count(0)
-        while current.level > 0 do
+        while current.captureLevel > 0 do
             update_range_end(current, lineCount)
             current = current.parent
             assert(current ~= nil)
@@ -323,7 +332,7 @@ local MarkdownProvider = {
 
         local function update_range_end(node, rangeEnd)
             if node.range ~= nil and node.level <= 6 then
-                node.range["end"] = { character = node.range["end"], line = rangeEnd }
+                node.range["end"].line = rangeEnd
                 node.selectionRange = node.range
             end
         end
@@ -565,13 +574,11 @@ end
 ---@return string[]
 local function symbol_path(symbol)
     local path = {}
-
     while symbol.level > 0 do
-        table.insert(path, 1, symbol.name)
+        path[symbol.level] = symbol.name
         symbol = symbol.parent
         assert(symbol ~= nil)
     end
-
     return path
 end
 
@@ -593,8 +600,22 @@ local function details_open(details, params)
     local details_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = details_buf })
 
+    ---@param range Range
+    ---@return string
+    local function range_string(range)
+        return (
+            "( "
+            .. "(" .. range.start.line .. ", " .. range.start.character .. "), "
+            .. "(" .. range["end"].line .. ", " .. range["end"].character .. ")"
+            .. " )"
+        )
+    end
+
     local text = {
-        "[" .. symbol.kind .. "]",
+        "[" .. symbol.kind .. "] level: " .. tostring(symbol.level),
+        "range: " .. range_string(symbol.range),
+        "selectionRange: " .. range_string(symbol.selectionRange),
+        "",
         table.concat(symbol_path(symbol), "."),
     }
 
@@ -776,6 +797,67 @@ local function sidebar_source_win_buf(sidebar)
         return vim.api.nvim_win_get_buf(sidebar.source_win)
     end
     return -1
+end
+
+---@param root Symbol
+---@param pos Pos
+---@return Symbol
+local function symbol_at_pos(root, pos)
+
+    ---@param range Range
+    ---@param _pos Pos
+    ---@return boolean
+    local function in_range_line(range, _pos)
+        return range.start.line <= _pos.line and _pos.line <= range["end"].line
+    end
+
+    ---@param range Range
+    ---@param _pos Pos
+    ---@return boolean
+    local function in_range_character(range, _pos)
+        return range.start.character <= _pos.character and _pos.character <= range["end"].character
+    end
+
+    ---@param range Range
+    ---@param _pos Pos
+    ---@return boolean
+    local function range_before_pos(range, _pos)
+        return (
+            range["end"].line < _pos.line
+            or (
+                range["end"].line == _pos.line
+                and range["end"].character < _pos.line
+            )
+        )
+    end
+
+    local current = root
+    local partial_match = true
+    while #current.children > 0 and partial_match do
+        partial_match = false
+        local prev = current
+        for _, symbol in ipairs(current.children) do
+            if range_before_pos(symbol.range, pos) then
+                prev = symbol
+            end
+            if not partial_match and in_range_line(symbol.range, pos) then
+                current = symbol
+                partial_match = true
+            end
+            if partial_match then
+                if in_range_line(symbol.range, pos) then
+                    if in_range_character(symbol.range, pos) then
+                        current = symbol
+                        break
+                    end
+                else
+                    break
+                end
+            end
+        end
+        if not partial_match then current = prev end
+    end
+    return current
 end
 
 ---@param sidebar Sidebar
@@ -1666,6 +1748,67 @@ local function on_win_enter_hide_cursor(sidebars, cursor)
     end
 end
 
+---@param sidebar Sidebar
+---@param target Symbol
+local function sidebar_set_cursor_at_symbol(sidebar, target)
+
+    ---@param outer_range Range
+    ---@param inner_range Range
+    ---@return boolean
+    local function range_contains(outer_range, inner_range)
+        return (
+            (
+                outer_range.start.line < inner_range.start.line
+                or (
+                    outer_range.start.line == inner_range.start.line
+                    and outer_range.start.character <= inner_range.start.character
+                )
+            ) and (
+                inner_range["end"].line < outer_range["end"].line
+                or (
+                    outer_range["end"].line == inner_range["end"].line
+                    and inner_range["end"].character <= outer_range["end"].character
+                )
+            )
+        )
+    end
+
+    ---@param symbol Symbol
+    ---@return integer
+    local function count_lines(symbol)
+        local lines = 1
+        if not symbol.folded then
+            for _, child in ipairs(symbol.children) do
+                lines = lines + count_lines(child)
+            end
+        end
+        return lines
+    end
+
+    if target.level == 0 then return end
+    local current = sidebar_current_symbols(sidebar)
+    local lines = 0
+    while current ~= target do
+        current.folded = false
+        local found = false
+        for _, child in ipairs(current.children) do
+            if range_contains(child.range, target.range) then
+                lines = lines + 1
+                current = child
+                found = true
+                break
+            else
+                lines = lines + count_lines(child)
+            end
+        end
+        if not found then break end
+    end
+
+    if lines == 0 then lines = 1 end
+    sidebar_refresh_view(sidebar)
+    vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
+end
+
 function M.setup(config)
     local _config = cfg.prepare_config(config)
 
@@ -1727,6 +1870,31 @@ function M.setup(config)
             end
         end,
         { desc = "" }
+    )
+
+    create_command(
+        cmds,
+        "SymbolsCurrent",
+        function()
+            local win = vim.api.nvim_get_current_win()
+            local sidebar = find_sidebar_for_win(sidebars, win)
+            if sidebar ~= nil then
+                local root = sidebar_current_symbols(sidebar)
+                local pos = to_pos(vim.api.nvim_win_get_cursor(sidebar.source_win))
+                local symbol = symbol_at_pos(root, pos)
+                sidebar_set_cursor_at_symbol(sidebar, symbol)
+            end
+        end,
+        {}
+    )
+
+    create_command(
+        cmds,
+        "SymbolsGoTo",
+        function()
+
+        end,
+        {}
     )
 
     vim.api.nvim_create_autocmd(
