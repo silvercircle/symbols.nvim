@@ -64,8 +64,10 @@ local M = {}
 ---@field keymaps table<string, DevAction>
 
 ---@class SidebarConfig
----@field show_details boolean
+---@field show_inline_details boolean
+---@field show_details_pop_up boolean
 ---@field show_guide_lines boolean
+---@field wrap boolean
 ---@field chars CharConfig
 ---@field preview PreviewConfig
 ---@field keymaps KeymapsConfig
@@ -80,8 +82,10 @@ local M = {}
 M.default = {
     hide_cursor = false,
     sidebar = {
-        show_details = false,
+        show_inline_details = false,
+        show_details_pop_up = true,
         show_guide_lines = false,
+        wrap = false,
         chars = {
             folded = "",
             unfolded = "",

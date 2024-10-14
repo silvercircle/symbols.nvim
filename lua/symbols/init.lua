@@ -40,6 +40,23 @@ local function win_set_option(win, name, value)
     vim.api.nvim_set_option_value(name, value, { win = win })
 end
 
+local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
+local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
+
+---@class Highlight
+---@field group string
+---@field line integer  -- one-indexed
+---@field col_start integer
+---@field col_end integer
+
+---@param buf integer
+---@param hl Highlight
+local function highlight_apply(buf, hl)
+    vim.api.nvim_buf_add_highlight(
+        buf, SIDEBAR_HL_NS, hl.group, hl.line-1, hl.col_start, hl.col_end
+    )
+end
+
 ---@class Pos
 ---@field line integer
 ---@field character integer
@@ -558,6 +575,7 @@ end
 ---@field sidebar_win integer
 ---@field locked boolean
 ---@field prev_cursor [integer, integer] | nil
+---@field show_debug_info boolean
 
 ---@return DetailsWindow
 local function details_window_new_obj()
@@ -567,6 +585,7 @@ local function details_window_new_obj()
         sidebar_win = -1,
         locked = false,
         prev_cursor = nil,
+        show_debug_info = false
     }
 end
 
@@ -583,9 +602,9 @@ local function symbol_path(symbol)
 end
 
 ---@class DetailsOpenParams
----@field details DetailsWindow
 ---@field sidebar_win integer
 ---@field symbol Symbol
+---@field symbol_display_config table<string, SymbolDisplayConfig>
 
 ---@param details DetailsWindow
 ---@param params DetailsOpenParams
@@ -600,27 +619,57 @@ local function details_open(details, params)
     local details_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = details_buf })
 
-    ---@param range Range
-    ---@return string
-    local function range_string(range)
-        return (
-            "( "
-            .. "(" .. range.start.line .. ", " .. range.start.character .. "), "
-            .. "(" .. range["end"].line .. ", " .. range["end"].character .. ")"
-            .. " )"
-        )
+    local text = {}
+
+    if details.show_debug_info then
+        ---@param range Range
+        ---@return string
+        local function range_string(range)
+            return (
+                "("
+                .. "(" .. range.start.line .. ", " .. range.start.character .. "), "
+                .. "(" .. range["end"].line .. ", " .. range["end"].character .. ")"
+                .. ")"
+            )
+        end
+
+        -- debug info
+        table.insert(text, " [SYMBOL DEBUG INFO]")
+        table.insert(text, "   name: " .. symbol.name)
+        table.insert(text, "   kind: " .. symbol.kind)
+        table.insert(text, "   level: " .. tostring(symbol.level))
+        table.insert(text, "   range: " .. range_string(symbol.range))
+        table.insert(text, "   selectionRange: " .. range_string(symbol.selectionRange))
+        table.insert(text, "")
     end
 
-    local text = {
-        "[" .. symbol.kind .. "] level: " .. tostring(symbol.level),
-        "range: " .. range_string(symbol.range),
-        "selectionRange: " .. range_string(symbol.selectionRange),
-        "",
-        table.concat(symbol_path(symbol), "."),
-    }
+    ---@type Highlight[]
+    local highlights = {}
+
+    local symbol_cfg = params.symbol_display_config[symbol.kind] or {}
+    local display_kind = symbol_cfg.kind or ""
+    if display_kind ~= "" then
+        table.insert(highlights, {
+            group = params.symbol_display_config[symbol.kind].highlight,
+            line = #text + 1,
+            col_start = 1,
+            col_end = 1 + #display_kind,
+        })
+        display_kind = display_kind .. " "
+    end
+    table.insert(text, " " .. display_kind .. table.concat(symbol_path(symbol), "."))
 
     if symbol.detail ~= "" then
-        vim.list_extend(text, vim.split(symbol.detail, "\n"))
+        local detail_first_line = #text + 1
+        for detail_line, line in ipairs(vim.split(symbol.detail, "\n")) do
+            table.insert(text, "   " .. line)
+            table.insert(highlights, {
+                group = "Comment",
+                line = detail_first_line + detail_line - 1,
+                col_start = 0,
+                col_end = 3 + #line,
+            })
+        end
     end
 
     local longest_line = 0
@@ -629,6 +678,11 @@ local function details_open(details, params)
     end
 
     buf_set_content(details_buf, text)
+
+    for _, hl in ipairs(highlights) do
+        highlight_apply(details_buf, hl)
+    end
+
     local line_count = vim.api.nvim_buf_line_count(details_buf)
 
     local sidebar_width = vim.api.nvim_win_get_width(sidebar_win)
@@ -762,9 +816,9 @@ end
 ---@field preview Preview
 ---@field details DetailsWindow
 ---@field char_config CharConfig
----@field show_details boolean
----@field show_details_pop_up boolean
+---@field show_inline_details boolean
 ---@field show_guide_lines boolean
+---@field wrap boolean
 ---@field keymaps KeymapsConfig
 
 ---@return Sidebar
@@ -783,9 +837,9 @@ local function sidebar_new_obj()
         preview = preview_new_obj(),
         details = details_window_new_obj(),
         char_config = cfg.default.sidebar.chars,
-        show_details = false,
-        show_details_pop_up = false,
+        show_inline_details = false,
         show_guide_lines = false,
+        wrap = false,
         keymaps = cfg.default.sidebar.keymaps,
     }
 end
@@ -950,6 +1004,8 @@ local function sidebar_open(sidebar)
     win_set_option(sidebar.win, "cursorline", true)
     win_set_option(sidebar.win, "winfixwidth", true)
 
+    win_set_option(sidebar.win, "wrap", sidebar.wrap)
+
     sidebar.visible = true
 end
 
@@ -1001,23 +1057,6 @@ local function sidebar_current_symbol(sidebar)
     local line = vim.api.nvim_win_get_cursor(sidebar.win)[1]
     local s, _ = _find_symbol(symbols, line)
     return s
-end
-
-local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
-local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
-
----@class Highlight
----@field group string
----@field line integer  -- one-indexed
----@field col_start integer
----@field col_end integer
-
----@param buf integer
----@param hl Highlight
-local function highlight_apply(buf, hl)
-    vim.api.nvim_buf_add_highlight(
-        buf, SIDEBAR_HL_NS, hl.group, hl.line-1, hl.col_start, hl.col_end
-    )
 end
 
 ---@param root_symbol Symbol
@@ -1120,7 +1159,7 @@ local function sidebar_refresh_view(sidebar)
         highlight_apply(sidebar.buf, hl)
     end
 
-    if sidebar.show_details then
+    if sidebar.show_inline_details then
         for line, detail in ipairs(details) do
             vim.api.nvim_buf_set_extmark(
                 sidebar.buf, SIDEBAR_EXT_NS, line-1, -1,
@@ -1257,6 +1296,7 @@ local function _sidebar_details_open_params(sidebar)
         return {
             symbol = sidebar_current_symbol(sidebar),
             sidebar_win = sidebar.win,
+            symbol_display_config = sidebar.symbol_display_config,
         }
     end
 end
@@ -1390,7 +1430,7 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_details(sidebar)
-    sidebar.show_details = not sidebar.show_details
+    sidebar.show_inline_details = not sidebar.show_inline_details
     sidebar_refresh_view(sidebar)
 end
 
@@ -1565,16 +1605,21 @@ end
 ---@param num integer
 ---@param config SidebarConfig
 ---@param gs GlobalState
-local function sidebar_new(sidebar, num, config, gs)
+---@param debug boolean
+local function sidebar_new(sidebar, num, config, gs, debug)
     sidebar.deleted = false
     sidebar.source_win = vim.api.nvim_get_current_win()
 
     sidebar.gs = gs
     sidebar.preview_config = config.preview
-    sidebar.show_details = config.show_details
+    sidebar.show_inline_details = config.show_inline_details
+    sidebar.details.auto_show = config.show_details_pop_up
     sidebar.show_guide_lines = config.show_guide_lines
     sidebar.char_config = config.chars
     sidebar.keymaps = config.keymaps
+    sidebar.wrap = config.wrap
+
+    sidebar.details.show_debug_info = debug
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")
@@ -1851,7 +1896,7 @@ function M.setup(config)
                     table.insert(sidebars, sidebar)
                     num = #sidebars
                 end
-                sidebar_new(sidebar, num, _config.sidebar, gs)
+                sidebar_new(sidebar, num, _config.sidebar, gs, _config.dev.enabled)
             end
             sidebar_open(sidebar)
             sidebar_refresh_symbols(sidebar, providers, _config)
