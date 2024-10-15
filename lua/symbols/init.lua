@@ -80,10 +80,9 @@ end
 ---@field children Symbol[]
 ---@field range Range
 ---@field selectionRange Range
----@field folded boolean
 
 ---@return Symbol
-local function symbol_root()
+local function Symbol_root()
     return {
         kind = "root",
         name = "<root>",
@@ -99,7 +98,6 @@ local function symbol_root()
             start = { line = 0, character = 0 },
             ["end"] = { line = -1, character = -1 }
         },
-        folded = false,
     }
 end
 
@@ -151,18 +149,17 @@ for k, v in pairs(LspSymbolKind) do
 end
 
 
----@param symbol any
+---@param lsp_symbol any
 ---@param parent Symbol?
 ---@param level integer
-local function rec_tidy_lsp_symbol(symbol, parent, level)
-    symbol.parent = parent
-    symbol.detail = symbol.detail or ""
-    symbol.children = symbol.children or {}
-    symbol.kind = LspSymbolKindString[symbol.kind]
-    symbol.folded = true
-    symbol.level = level
-    for _, child in ipairs(symbol.children) do
-        rec_tidy_lsp_symbol(child, symbol, level + 1)
+local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
+    lsp_symbol.parent = parent
+    lsp_symbol.detail = lsp_symbol.detail or ""
+    lsp_symbol.children = lsp_symbol.children or {}
+    lsp_symbol.kind = LspSymbolKindString[lsp_symbol.kind]
+    lsp_symbol.level = level
+    for _, child in ipairs(lsp_symbol.children) do
+        rec_tidy_lsp_symbol(child, lsp_symbol, level + 1)
     end
 end
 
@@ -186,10 +183,9 @@ local LspProvider = {
                 on_fail()
                 return
             end
-            local root = symbol_root()
+            local root = Symbol_root()
             root.children = result
             rec_tidy_lsp_symbol(root, nil, 0)
-            root.folded = false
             refresh_symbols(root)
         end
 
@@ -241,7 +237,7 @@ local VimdocProvider = {
         local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3, tag = 4 }
         local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", tag = "Tag" }
 
-        local root = symbol_root()
+        local root = Symbol_root()
         root.captureLevel = 0
         local current = root
 
@@ -289,7 +285,6 @@ local VimdocProvider = {
 
                 parent = current,
                 level = current.level + 1,
-                folded = true,
 
                 captureLevel = captureLevel,
             }
@@ -344,7 +339,7 @@ local MarkdownProvider = {
         local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3, h4 = 4, h5 = 5, h6 = 6 }
         local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", h4 = "H4", h5 = "H5", h6 = "H6" }
 
-        local root = symbol_root()
+        local root = Symbol_root()
         local current = root
 
         local function update_range_end(node, rangeEnd)
@@ -391,7 +386,6 @@ local MarkdownProvider = {
 
                 parent = current,
                 level = captureLevel,
-                folded = true,
             }
 
             table.insert(current.children, new)
@@ -604,6 +598,7 @@ end
 ---@class DetailsOpenParams
 ---@field sidebar_win integer
 ---@field symbol Symbol
+---@field symbol_state SymbolState
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
 
 ---@param details DetailsWindow
@@ -636,10 +631,12 @@ local function details_open(details, params)
         -- debug info
         table.insert(text, " [SYMBOL DEBUG INFO]")
         table.insert(text, "   name: " .. symbol.name)
-        table.insert(text, "   kind: " .. symbol.kind)
+        table.insert(text, "   kind: " .. (symbol.kind or ""))
         table.insert(text, "   level: " .. tostring(symbol.level))
         table.insert(text, "   range: " .. range_string(symbol.range))
         table.insert(text, "   selectionRange: " .. range_string(symbol.selectionRange))
+        table.insert(text, "   folded: " .. tostring(params.symbol_state.folded))
+        table.insert(text, "   visible: " .. tostring(params.symbol_state.visible))
         table.insert(text, "")
     end
 
@@ -801,6 +798,85 @@ local function global_state_new()
     }
 end
 
+---@class SymbolState
+---@field folded boolean
+---@field visible boolean
+---@field visible_children integer
+
+---@return SymbolState
+local function SymbolState_new()
+    return {
+        folded = true,
+        visible = true,
+        visible_children = 0,
+    }
+end
+
+---@alias SymbolStates table<Symbol, SymbolState>
+
+---@param root Symbol
+---@return Symbols
+local function SymbolStates_build(root)
+    local states = {}
+
+    local function traverse(symbol)
+        states[symbol] = SymbolState_new()
+        for _, child in ipairs(symbol.children) do
+            traverse(child)
+        end
+    end
+
+    traverse(root)
+    return states
+end
+
+---@alias SymbolFilter fun(ft: string, symbol: Symbol): boolean
+
+---@class Symbols
+---@field buf integer
+---@field root Symbol
+---@field states SymbolStates
+
+---@return Symbols
+local function Symbols_new()
+    local root = Symbol_root()
+    local symbols = {
+        buf = -1,
+        root = root,
+        states = {
+            [root] = SymbolState_new()
+        },
+    }
+    symbols.states[root].folded = false
+    return symbols
+end
+
+---@param symbols Symbols
+---@param symbol_filter SymbolFilter
+local function Symbols_apply_filter(symbols, symbol_filter)
+    local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
+
+    ---@param symbol Symbol
+    local function apply(symbol)
+        local state = symbols.states[symbol]
+        if symbol.level == 0 then
+            state.visible = true
+        else
+            state.visible = symbol_filter(ft, symbol)
+        end
+        state.visible_children = 0
+        for _, child in ipairs(symbol.children) do
+            apply(child)
+            if symbols.states[child].visible then
+                state.visible_children = state.visible_children + 1
+            end
+        end
+
+    end
+
+    apply(symbols.root)
+end
+
 ---@class Sidebar
 ---@field gs GlobalState
 ---@field deleted boolean
@@ -808,7 +884,7 @@ end
 ---@field buf integer
 ---@field source_win integer
 ---@field visible boolean
----@field buf_symbols table<integer, Symbol>
+---@field buf_symbols table<integer, Symbols>
 ---@field lines table<Symbol, integer>
 ---@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
@@ -820,6 +896,7 @@ end
 ---@field show_guide_lines boolean
 ---@field wrap boolean
 ---@field keymaps KeymapsConfig
+---@field symbol_filter SymbolFilter
 
 ---@return Sidebar
 local function sidebar_new_obj()
@@ -830,7 +907,7 @@ local function sidebar_new_obj()
         buf = -1,
         source_win = -1,
         visible = false,
-        buf_symbols = vim.defaulttable(symbol_root),
+        buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
         curr_provider = nil,
         symbol_display_config = {},
@@ -841,6 +918,7 @@ local function sidebar_new_obj()
         show_guide_lines = false,
         wrap = false,
         keymaps = cfg.default.sidebar.keymaps,
+        symbol_state = {},
     }
 end
 
@@ -915,19 +993,20 @@ local function symbol_at_pos(root, pos)
 end
 
 ---@param sidebar Sidebar
----@return Symbol
+---@return Symbols
 local function sidebar_current_symbols(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
     assert(source_buf ~= -1)
-    return sidebar.buf_symbols[source_buf]
+    local symbols = sidebar.buf_symbols[source_buf]
+    symbols.buf = source_buf
+    return symbols
 end
 
 ---@parm sidebar Sidebar
----@param new_symbol Symbol
-local function sidebar_replace_current_symbols(sidebar, new_symbol)
-    local source_buf = sidebar_source_win_buf(sidebar)
-    assert(source_buf ~= -1)
-    sidebar.buf_symbols[source_buf] = new_symbol
+---@param symbols Symbols
+local function sidebar_replace_current_symbols(sidebar, symbols)
+    assert(symbols.buf ~= -1, "symbols.buf has to be set")
+    sidebar.buf_symbols[symbols.buf] = symbols
 end
 
 ---@return string
@@ -1035,36 +1114,41 @@ local function sidebar_destroy(sidebar)
 end
 
 ---@param sidebar Sidebar
----@return Symbol
+---@return Symbol, SymbolState
 local function sidebar_current_symbol(sidebar)
     assert(vim.api.nvim_win_is_valid(sidebar.win))
+
+    local symbols = sidebar_current_symbols(sidebar)
 
     ---@param symbol Symbol
     ---@param num integer
     ---@return Symbol, integer
     local function _find_symbol(symbol, num)
         if num == 0 then return symbol, 0 end
-        if symbol.folded then return symbol, num end
+        if symbols.states[symbol].folded then
+            return symbol, num
+        end
         for _, sym in ipairs(symbol.children) do
-            local s
-            s, num = _find_symbol(sym, num - 1)
-            if num <= 0 then return s, 0 end
+            if symbols.states[sym].visible then
+                local s
+                s, num = _find_symbol(sym, num - 1)
+                if num <= 0 then return s, 0 end
+            end
         end
         return symbol, num
     end
 
-    local symbols = sidebar_current_symbols(sidebar)
     local line = vim.api.nvim_win_get_cursor(sidebar.win)[1]
-    local s, _ = _find_symbol(symbols, line)
-    return s
+    local s, _ = _find_symbol(symbols.root, line)
+    return s, symbols.states[s]
 end
 
----@param root_symbol Symbol
+---@param symbols Symbols
 ---@param symbol_display_config table<string, SymbolDisplayConfig>
 ---@param chars CharConfig
 ---@param show_guide_lines boolean
 ---@return string[], table<Symbol, integer>, Highlight[], string[]
-local function process_symbols(root_symbol, symbol_display_config, chars, show_guide_lines)
+local function process_symbols(symbols, symbol_display_config, chars, show_guide_lines)
     ---@type string[]
     local details = {}
     local symbol_to_line = {}
@@ -1072,15 +1156,17 @@ local function process_symbols(root_symbol, symbol_display_config, chars, show_g
     ---@param symbol Symbol
     ---@param line integer
     local function get_symbol_to_line(symbol, line)
-        if symbol.folded then return line end
+        if symbols.states[symbol].folded then return line + 1 end
         for _, sym in ipairs(symbol.children) do
-            symbol_to_line[sym] = line
-            table.insert(details, sym.detail)
-            line = get_symbol_to_line(sym, line + 1)
+            if symbols.states[sym].visible then
+                symbol_to_line[sym] = line
+                table.insert(details, sym.detail)
+                line = get_symbol_to_line(sym, line)
+            end
         end
         return line
     end
-    get_symbol_to_line(root_symbol, 1)
+    get_symbol_to_line(symbols.root, 1)
 
     local buf_lines = {}
     local highlights = {}
@@ -1090,46 +1176,49 @@ local function process_symbols(root_symbol, symbol_display_config, chars, show_g
     ---@param line_nr integer
     ---@return integer
     local function get_buf_lines_and_highlights(symbol, indent, line_nr)
-        if symbol.folded then return line_nr end
+        if symbols.states[symbol].folded then return line_nr end
         for sym_i, sym in ipairs(symbol.children) do
-            local prefix
-            if #sym.children == 0 then
-                if show_guide_lines and sym.level > 1 then
-                    if sym_i == #symbol.children then
-                        prefix = chars.guide_last_item .. " "
+            local state = symbols.states[sym]
+            if state.visible then
+                local prefix
+                if state.visible_children == 0 then
+                    if show_guide_lines and sym.level > 1 then
+                        if sym_i == #symbol.children then
+                            prefix = chars.guide_last_item .. " "
+                        else
+                            prefix = chars.guide_middle_item .. " "
+                        end
                     else
-                        prefix = chars.guide_middle_item .. " "
+                        prefix = "  "
                     end
+                elseif state.folded then
+                    prefix = chars.folded .. " "
                 else
-                    prefix = "  "
+                    prefix = chars.unfolded .. " "
                 end
-            elseif sym.folded then
-                prefix = chars.folded .. " "
-            else
-                prefix = chars.unfolded .. " "
+                local kind_display = symbol_display_config[sym.kind].kind or sym.kind
+                local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
+                table.insert(buf_lines, line)
+                ---@type Highlight
+                local hl = {
+                    group = symbol_display_config[sym.kind].highlight,
+                    line = line_nr,
+                    col_start = #indent + #prefix,
+                    col_end = #indent + #prefix + #kind_display
+                }
+                table.insert(highlights, hl)
+                local new_indent
+                if show_guide_lines and sym.level > 1 and sym_i ~= #symbol.children then
+                    new_indent = indent .. chars.guide_vert .. " "
+                else
+                    new_indent = indent .. "  "
+                end
+                line_nr = get_buf_lines_and_highlights(sym, new_indent, line_nr + 1)
             end
-            local kind_display = symbol_display_config[sym.kind].kind or sym.kind
-            local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
-            table.insert(buf_lines, line)
-            ---@type Highlight
-            local hl = {
-                group = symbol_display_config[sym.kind].highlight,
-                line = line_nr,
-                col_start = #indent + #prefix,
-                col_end = #indent + #prefix + #kind_display
-            }
-            table.insert(highlights, hl)
-            local new_indent
-            if show_guide_lines and sym.level > 1 and sym_i ~= #symbol.children then
-                new_indent = indent .. chars.guide_vert .. " "
-            else
-                new_indent = indent .. "  "
-            end
-            line_nr = get_buf_lines_and_highlights(sym, new_indent, line_nr + 1)
         end
         return line_nr
     end
-    get_buf_lines_and_highlights(root_symbol, "", 1)
+    get_buf_lines_and_highlights(symbols.root, "", 1)
 
     return  buf_lines, symbol_to_line, highlights, details
 end
@@ -1186,24 +1275,36 @@ local function sidebar_refresh_symbols(sidebar, providers, config)
         return nil
     end
 
-    ---@param old_symbol Symbol
-    ---@param new_symbol Symbol
-    local function preserve_folds(old_symbol, new_symbol)
-        if old_symbol.level > 0 and old_symbol.folded then return end
-        for _, new_sym in ipairs(new_symbol.children) do
-            local old_sym = _find_symbol_with_name(old_symbol, new_sym.name)
-            if old_sym ~= nil then
-                new_sym.folded = old_sym.folded
-                preserve_folds(old_sym, new_sym)
+    ---@param old_symbols Symbols
+    ---@param new_symbols Symbols
+    local function preserve_folds(old_symbols, new_symbols)
+        ---@param old Symbol
+        ---@param new Symbol
+        local function _preserve_folds(old, new)
+            if old.level > 0 and old_symbols.states[old].folded then return end
+            for _, new_sym in ipairs(new.children) do
+                local old_sym = _find_symbol_with_name(old, new_sym.name)
+                if old_sym ~= nil then
+                    new_symbols.states[new_sym].folded = old_symbols.states[old_sym].folded
+                    _preserve_folds(old_sym, new_sym)
+                end
             end
         end
+
+        _preserve_folds(old_symbols.root, new_symbols.root)
+        new_symbols.states[new_symbols.root].folded = false
     end
 
     ---@param new_root Symbol
     local function _refresh_sidebar(new_root)
-        local current_root = sidebar_current_symbols(sidebar)
-        preserve_folds(current_root, new_root)
-        sidebar_replace_current_symbols(sidebar, new_root)
+        local current_symbols = sidebar_current_symbols(sidebar)
+        local new_symbols = Symbols_new()
+        new_symbols.buf = sidebar_source_win_buf(sidebar)
+        new_symbols.root = new_root
+        new_symbols.states = SymbolStates_build(new_root)
+        preserve_folds(current_symbols, new_symbols)
+        Symbols_apply_filter(new_symbols, sidebar.symbol_filter)
+        sidebar_replace_current_symbols(sidebar, new_symbols)
         sidebar_refresh_view(sidebar)
     end
 
@@ -1245,16 +1346,24 @@ local function sidebar_refresh_symbols(sidebar, providers, config)
     end
 end
 
----@param symbol Symbol
+---@param symbols Symbols
+---@param start_symbol Symbol
 ---@param value boolean
 ---@return integer
-local function symbol_change_folded_rec(symbol, value)
-    local changes = (symbol.folded ~= value and #symbol.children > 0 and 1) or 0
-    symbol.folded = value
-    for _, sym in ipairs(symbol.children) do
-        changes = changes + symbol_change_folded_rec(sym, value)
+local function symbol_change_folded_rec(symbols, start_symbol, value)
+
+    ---@param symbol Symbol
+    local function _change_folded_rec(symbol)
+        local symbol_state = symbols.states[symbol]
+        local changes = (symbol_state.folded ~= value and #symbol.children > 0 and 1) or 0
+        symbol_state.folded = value
+        for _, sym in ipairs(symbol.children) do
+            changes = changes + _change_folded_rec(sym)
+        end
+        return changes
     end
-    return changes
+
+    return _change_folded_rec(start_symbol)
 end
 
 ---@param sidebar Sidebar
@@ -1293,9 +1402,11 @@ end
 ---@return fun(): DetailsOpenParams
 local function _sidebar_details_open_params(sidebar)
     return function()
+        local symbol, symbol_state = sidebar_current_symbol(sidebar)
         return {
-            symbol = sidebar_current_symbol(sidebar),
             sidebar_win = sidebar.win,
+            symbol = symbol,
+            symbol_state = symbol_state,
             symbol_display_config = sidebar.symbol_display_config,
         }
     end
@@ -1312,63 +1423,75 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_unfold(sidebar)
-    local symbol = sidebar_current_symbol(sidebar)
-    symbol.folded = false
+    local _, state = sidebar_current_symbol(sidebar)
+    state.folded = false
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold(sidebar)
-        local symbol = sidebar_current_symbol(sidebar)
-        if symbol.level > 1 and (symbol.folded or #symbol.children == 0) then
+        local symbol, state = sidebar_current_symbol(sidebar)
+        if symbol.level > 1 and (state.folded or #symbol.children == 0) then
             symbol = symbol.parent
             assert(symbol ~= nil)
         end
-        symbol.folded = true
+        state.folded = true
         sidebar_refresh_view(sidebar)
         move_cursor_to_symbol(sidebar, symbol)
     end
 
 ---@param sidebar Sidebar
 local function sidebar_unfold_recursively(sidebar)
-    local symbol = sidebar_current_symbol(sidebar)
-    symbol_change_folded_rec(symbol, false)
+    local symbols = sidebar_current_symbols(sidebar)
+    local symbol, _ = sidebar_current_symbol(sidebar)
+    symbol_change_folded_rec(symbols, symbol, false)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_recursively(sidebar)
+    local symbols = sidebar_current_symbols(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
-    local changes = symbol_change_folded_rec(symbol, true)
+    local changes = symbol_change_folded_rec(symbols, symbol, true)
     if changes == 0 then
         while(symbol.level > 1) do
             symbol = symbol.parent
             assert(symbol ~= nil)
         end
-        symbol_change_folded_rec(symbol, true)
+        symbol_change_folded_rec(symbols, symbol, true)
     end
     sidebar_refresh_view(sidebar)
     move_cursor_to_symbol(sidebar, symbol)
 end
 
 
-local function _change_fold_at_level(symbol, level, value)
-    if symbol.level == level then symbol.folded = value end
-    if symbol.level >= level then return end
-    for _, sym in ipairs(symbol.children) do
-        _change_fold_at_level(sym, level, value)
+---@param symbols Symbols
+---@param level integer
+---@param value boolean
+local function _change_fold_at_level(symbols, level, value)
+    local function change_fold(symbol)
+        local state = symbols.states[symbol]
+        if symbol.level == level then state.folded = value end
+        if symbol.level >= level then return end
+        for _, sym in ipairs(symbol.children) do
+            change_fold(sym)
+        end
     end
+
+    change_fold(symbols.root)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_unfold_one_level(sidebar)
+
+    local symbols = sidebar_current_symbols(sidebar)
 
     ---@param symbol Symbol
     ---@return integer
     local function find_level_to_unfold(symbol)
         local MAX_LEVEL = 100000
 
-        if symbol.level ~= 0 and symbol.folded then
+        if symbol.level ~= 0 and symbols.states[symbol].folded then
             return symbol.level
         end
 
@@ -1380,27 +1503,26 @@ local function sidebar_unfold_one_level(sidebar)
         return min_level
     end
 
-    local symbols = sidebar_current_symbols(sidebar)
-    local level = find_level_to_unfold(symbols)
+    local level = find_level_to_unfold(symbols.root)
     _change_fold_at_level(symbols, level, false)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_one_level(sidebar)
+    local symbols = sidebar_current_symbols(sidebar)
 
     ---@param symbol Symbol
     ---@return integer
     local function find_level_to_fold(symbol)
-        local max_level = (symbol.folded and 1) or symbol.level
+        local max_level = (symbols.states[symbol].folded and 1) or symbol.level
         for _, sym in ipairs(symbol.children) do
             max_level = math.max(max_level, find_level_to_fold(sym))
         end
         return max_level
     end
 
-    local symbols = sidebar_current_symbols(sidebar)
-    local level = find_level_to_fold(symbols)
+    local level = find_level_to_fold(symbols.root)
     _change_fold_at_level(symbols, level, true)
     sidebar_refresh_view(sidebar)
 end
@@ -1408,23 +1530,23 @@ end
 ---@param sidebar Sidebar
 local function sidebar_unfold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, false)
+    symbol_change_folded_rec(symbols, symbols.root, false)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, true)
-    symbols.folded = false
+    symbol_change_folded_rec(symbols, symbols.root, true)
+    symbols.states[symbols.root].folded = false
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_fold(sidebar)
-    local symbol = sidebar_current_symbol(sidebar)
+    local symbol, state = sidebar_current_symbol(sidebar)
     if #symbol.children == 0 then return end
-    symbol.folded = not symbol.folded
+    state.folded = not state.folded
     sidebar_refresh_view(sidebar)
 end
 
@@ -1618,6 +1740,7 @@ local function sidebar_new(sidebar, num, config, gs, debug)
     sidebar.char_config = config.chars
     sidebar.keymaps = config.keymaps
     sidebar.wrap = config.wrap
+    sidebar.symbol_filter = config.symbol_filter
 
     sidebar.details.show_debug_info = debug
 
@@ -1796,6 +1919,7 @@ end
 ---@param sidebar Sidebar
 ---@param target Symbol
 local function sidebar_set_cursor_at_symbol(sidebar, target)
+    local symbols = sidebar_current_symbols(sidebar)
 
     ---@param outer_range Range
     ---@param inner_range Range
@@ -1822,7 +1946,7 @@ local function sidebar_set_cursor_at_symbol(sidebar, target)
     ---@return integer
     local function count_lines(symbol)
         local lines = 1
-        if not symbol.folded then
+        if not symbols.states[symbol].folded then
             for _, child in ipairs(symbol.children) do
                 lines = lines + count_lines(child)
             end
@@ -1831,10 +1955,10 @@ local function sidebar_set_cursor_at_symbol(sidebar, target)
     end
 
     if target.level == 0 then return end
-    local current = sidebar_current_symbols(sidebar)
     local lines = 0
+    local current = symbols.root
     while current ~= target do
-        current.folded = false
+        symbols.states[current].folded = false
         local found = false
         for _, child in ipairs(current.children) do
             if range_contains(child.range, target.range) then
@@ -1924,9 +2048,9 @@ function M.setup(config)
             local win = vim.api.nvim_get_current_win()
             local sidebar = find_sidebar_for_win(sidebars, win)
             if sidebar ~= nil then
-                local root = sidebar_current_symbols(sidebar)
+                local symbols = sidebar_current_symbols(sidebar)
                 local pos = to_pos(vim.api.nvim_win_get_cursor(sidebar.source_win))
-                local symbol = symbol_at_pos(root, pos)
+                local symbol = symbol_at_pos(symbols.root, pos)
                 sidebar_set_cursor_at_symbol(sidebar, symbol)
             end
         end,

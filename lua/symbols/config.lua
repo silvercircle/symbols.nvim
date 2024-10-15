@@ -64,6 +64,7 @@ local M = {}
 ---@field keymaps table<string, DevAction>
 
 ---@class SidebarConfig
+---@field symbol_filter fun(ft: string, symbol: Symbol): boolean
 ---@field show_inline_details boolean
 ---@field show_details_pop_up boolean
 ---@field show_guide_lines boolean
@@ -82,8 +83,9 @@ local M = {}
 M.default = {
     hide_cursor = false,
     sidebar = {
+        symbol_filter = function(_, _) return true end,
         show_inline_details = false,
-        show_details_pop_up = true,
+        show_details_pop_up = false,
         show_guide_lines = false,
         wrap = false,
         chars = {
