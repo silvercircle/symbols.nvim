@@ -29,16 +29,6 @@ local M = {}
 
 ---@alias KeymapsConfig table<string, SidebarAction?>
 
----@class SymbolDisplayConfig
----@field kind string?
----@field highlight string
-
----@class LspFileTypeConfig
----@field symbol_display table<string, SymbolDisplayConfig>
-
----@class LspConfig
----@field timeout_ms integer
----@field filetype table<string, LspFileTypeConfig>
 
 ---@alias DevAction
 ---| "reload"
@@ -61,6 +51,7 @@ local M = {}
 
 ---@class DevConfig
 ---@field enabled boolean
+---@field log_level integer
 ---@field keymaps table<string, DevAction>
 
 ---@class SidebarConfig
@@ -73,10 +64,32 @@ local M = {}
 ---@field preview PreviewConfig
 ---@field keymaps KeymapsConfig
 
+---@class SymbolDisplayConfig
+---@field kind string?
+---@field highlight string
+
+---@class LspFileTypeConfig
+---@field symbol_display table<string, SymbolDisplayConfig>
+
+---@class LspConfig
+---@field timeout_ms integer
+---@field filetype table<string, LspFileTypeConfig>
+
+---@class VimdocConfig
+---@field filetype table<string, LspFileTypeConfig>
+
+---@class MarkdownConfig
+---@field filetype table<string, LspFileTypeConfig>
+
+---@class ProvidersConfig
+---@field lsp LspConfig
+---@field vimdoc VimdocConfig
+---@field markdown MarkdownConfig
+
 ---@class Config
 ---@field hide_cursor boolean
 ---@field sidebar SidebarConfig
----@field lsp LspConfig
+---@field providers ProvidersConfig
 ---@field dev DevConfig
 
 ---@type Config
@@ -134,69 +147,72 @@ M.default = {
             ["?"] = "help",
         },
     },
-    lsp = {
-        timeout_ms = 1000,
-        filetype = {
-            default = {
-                symbol_display = {
-                    File = { highlight = "Identifier" },
-                    Module = { highlight = "Include" },
-                    Namespace = { highlight = "Include" },
-                    Package = { highlight = "Include" },
-                    Class = { highlight = "Type" },
-                    Method = { highlight = "Function" },
-                    Property = { highlight = "Identifier" },
-                    Field = { highlight = "Identifier" },
-                    Constructor = { highlight = "Special" },
-                    Enum = { highlight = "Type" },
-                    Interface = { highlight = "Type" },
-                    Function = { highlight = "Function" },
-                    Variable = { highlight = "Constant" },
-                    Constant = { highlight = "Constant" },
-                    String = { highlight = "String" },
-                    Number = { highlight = "Number" },
-                    Boolean = { highlight = "Boolean" },
-                    Array = { highlight = "Constant" },
-                    Object = { highlight = "Type" },
-                    Key = { highlight = "Type" },
-                    Null = { highlight = "Type" },
-                    EnumMember = { highlight = "Identifier" },
-                    Struct = { highlight = "Structure" },
-                    Event = { highlight = "Type" },
-                    Operator = { highlight = "Identifier" },
-                    TypeParameter = { highlight = "Identifier" },
-                },
-            }
-        }
-    },
-    vimdoc = {
-        filetype = {
-            default = {
-                symbol_display = {
-                    H1 = { highlight = "@markup.heading.1.vimdoc" },
-                    H2 = { highlight = "@markup.heading.2.vimdoc" },
-                    H3 = { highlight = "@markup.heading.3.vimdoc" },
-                    Tag = { highlight = "@label.vimdoc" },
+    providers = {
+        lsp = {
+            timeout_ms = 1000,
+            filetype = {
+                default = {
+                    symbol_display = {
+                        File = { highlight = "Identifier" },
+                        Module = { highlight = "Include" },
+                        Namespace = { highlight = "Include" },
+                        Package = { highlight = "Include" },
+                        Class = { highlight = "Type" },
+                        Method = { highlight = "Function" },
+                        Property = { highlight = "Identifier" },
+                        Field = { highlight = "Identifier" },
+                        Constructor = { highlight = "Special" },
+                        Enum = { highlight = "Type" },
+                        Interface = { highlight = "Type" },
+                        Function = { highlight = "Function" },
+                        Variable = { highlight = "Constant" },
+                        Constant = { highlight = "Constant" },
+                        String = { highlight = "String" },
+                        Number = { highlight = "Number" },
+                        Boolean = { highlight = "Boolean" },
+                        Array = { highlight = "Constant" },
+                        Object = { highlight = "Type" },
+                        Key = { highlight = "Type" },
+                        Null = { highlight = "Type" },
+                        EnumMember = { highlight = "Identifier" },
+                        Struct = { highlight = "Structure" },
+                        Event = { highlight = "Type" },
+                        Operator = { highlight = "Identifier" },
+                        TypeParameter = { highlight = "Identifier" },
+                    },
                 }
             }
-        }
-    },
-    markdown = {
-        filetype = {
-            default = {
-                symbol_display = {
-                    H1 = { highlight = "@markup.heading.1.markdown" },
-                    H2 = { highlight = "@markup.heading.2.markdown" },
-                    H3 = { highlight = "@markup.heading.3.markdown" },
-                    H4 = { highlight = "@markup.heading.4.markdown" },
-                    H5 = { highlight = "@markup.heading.5.markdown" },
-                    H6 = { highlight = "@markup.heading.6.markdown" },
+        },
+        vimdoc = {
+            filetype = {
+                default = {
+                    symbol_display = {
+                        H1 = { highlight = "@markup.heading.1.vimdoc" },
+                        H2 = { highlight = "@markup.heading.2.vimdoc" },
+                        H3 = { highlight = "@markup.heading.3.vimdoc" },
+                        Tag = { highlight = "@label.vimdoc" },
+                    }
                 }
             }
+        },
+        markdown = {
+            filetype = {
+                default = {
+                    symbol_display = {
+                        H1 = { highlight = "@markup.heading.1.markdown" },
+                        H2 = { highlight = "@markup.heading.2.markdown" },
+                        H3 = { highlight = "@markup.heading.3.markdown" },
+                        H4 = { highlight = "@markup.heading.4.markdown" },
+                        H5 = { highlight = "@markup.heading.5.markdown" },
+                        H6 = { highlight = "@markup.heading.6.markdown" },
+                    }
+                }
+            },
         },
     },
     dev = {
         enabled = false,
+        log_level = vim.log.levels.ERROR,
         keymaps = {},
     }
 }
@@ -205,10 +221,10 @@ M.default = {
 function M.prepare_config(config)
     config = vim.tbl_deep_extend("force", M.default, config)
 
-    local providers = { "lsp", "vimdoc" }
+    local providers = { "lsp", "vimdoc", "markdown" }
     for _, provider in ipairs(providers) do
-        local default_config = config[provider].filetype.default
-        for ft, ft_config in pairs(config[provider].filetype) do
+        local default_config = config.providers[provider].filetype.default
+        for ft, ft_config in pairs(config.providers[provider].filetype) do
             if ft ~= "default" then
                 ft_config.symbol_display = vim.tbl_deep_extend(
                     "force",
@@ -222,16 +238,16 @@ function M.prepare_config(config)
     return config
 end
 
----@param config Config
+---@param config table
 ---@param provider_name string
 ---@param filetype string
 ---@return table<string, SymbolDisplayConfig>
 function M.symbols_display_config(config, provider_name, filetype)
-    local ft_config = config[provider_name].filetype[filetype]
+    local ft_config = config.filetype[filetype]
     if ft_config ~= nil and ft_config.symbol_display ~= nil then
         return ft_config.symbol_display
     end
-    return config[provider_name].filetype.default.symbol_display
+    return config.filetype.default.symbol_display
 end
 
 return M

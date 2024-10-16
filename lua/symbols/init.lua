@@ -2,6 +2,43 @@ local cfg = require("symbols.config")
 
 local M = {}
 
+---@type integer
+local LOG_LEVEL = vim.log.levels.ERROR
+
+---@type table<integer, string>
+local LOG_LEVEL_STRING = {
+    [vim.log.levels.ERROR] = "ERROR",
+    [vim.log.levels.WARN] = "WARN",
+    [vim.log.levels.INFO] = "INFO",
+    [vim.log.levels.DEBUG] = "DEBUG",
+    [vim.log.levels.TRACE] = "TRACE",
+}
+
+---@param msg string
+---@param level any
+local function _log(msg, level)
+    if level >= LOG_LEVEL then
+        local date = os.date("%Y/%m/%d %H:%M:%S")
+        local _msg = table.concat({"[", date, "] ", LOG_LEVEL_STRING[level], " ", msg}, "")
+        vim.notify(_msg, level)
+    end
+end
+
+---@alias LogFun fun(msg: string)
+
+local log = {
+    ---@type LogFun
+    error = function(msg) _log(msg, vim.log.levels.ERROR) end,
+    ---@type LogFun
+    warn = function(msg) _log(msg, vim.log.levels.WARN) end,
+    ---@type LogFun
+    info = function(msg) _log(msg, vim.log.levels.INFO) end,
+    ---@type LogFun
+    debug = function(msg) _log(msg, vim.log.levels.DEBUG) end,
+    ---@type LogFun
+    trace = function(msg) _log(msg, vim.log.levels.TRACE) end,
+}
+
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
 ---@param win integer
@@ -101,7 +138,7 @@ local function Symbol_root()
     }
 end
 
----@alias RefreshSymbolsFun fun(symbols: Symbol)
+---@alias RefreshSymbolsFun fun(symbols: Symbol, provider_name: string, provider_config: table)
 ---@alias KindToHlGroupFun fun(kind: string): string
 ---@alias KindToDisplayFun fun(kind: string): string
 
@@ -109,7 +146,7 @@ end
 ---@field name string
 ---@field init (fun(cache: table, config: table)) | nil
 ---@field supports fun(cache: table, buf: integer): boolean
----@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: RefreshSymbolsFun, on_fail: fun())) | nil
+---@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: fun(root: Symbol), on_fail: fun())) | nil
 ---@field get_symbols (fun(cache: any, buf: integer): boolean, Symbol?) | nil
 
 ---@enum LspSymbolKind
@@ -833,6 +870,8 @@ end
 ---@alias SymbolFilter fun(ft: string, symbol: Symbol): boolean
 
 ---@class Symbols
+---@field provider string
+---@field provider_config table
 ---@field buf integer
 ---@field root Symbol
 ---@field states SymbolStates
@@ -841,6 +880,7 @@ end
 local function Symbols_new()
     local root = Symbol_root()
     local symbols = {
+        provider = "",
         buf = -1,
         root = root,
         states = {
@@ -877,6 +917,134 @@ local function Symbols_apply_filter(symbols, symbol_filter)
     apply(symbols.root)
 end
 
+---@class SymbolsCacheEntry
+---@field root Symbol
+---@field fresh boolean
+---@field update_in_progress boolean
+---@field post_update_callbacks RefreshSymbolsFun[]
+---@field updated osdate
+---@field provider_name string
+
+---@return SymbolsCacheEntry
+local function SymbolsCacheEntry_new()
+    return {
+        root = Symbol_root(),
+        fresh = false,
+        update_in_progress = false,
+        post_update_callbacks = {},
+        updated = nil,
+        provider_name = ""
+    }
+end
+
+---@alias SymbolsCache table<integer, SymbolsCacheEntry>
+
+---@return SymbolsCache
+local function SymbolsCache_new()
+    return vim.defaulttable(SymbolsCacheEntry_new)
+end
+
+---@class SymbolsRetriever
+---@field providers Provider[]
+---@field providers_config ProvidersConfig
+---@field cache SymbolsCache
+
+---@param providers Provider[]
+---@param providers_config ProvidersConfig
+---@return SymbolsRetriever
+local function SymbolsRetriever_new(providers, providers_config)
+    return {
+        providers = providers,
+        providers_config = providers_config,
+        cache = SymbolsCache_new()
+    }
+end
+
+---@param retriever SymbolsRetriever
+---@param buf integer
+---@param on_retrieve fun(symbol: Symbol, provider_name: string, provider_config: table)
+local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
+    log.debug("retrieve buf=" .. buf)
+
+    ---@param provider Provider
+    local function on_fail(provider)
+        return function()
+            local entry = retriever.cache[buf]
+            entry.update_in_progress = false
+            entry.post_update_callbacks = {}
+            log.error(provider.name .. " failed")
+        end
+    end
+
+    ---@param provider_name string
+    ---@param cached boolean
+    ---@return fun(root: Symbol)
+    local _on_retrieve = function(provider_name, cached)
+        ---@param root Symbol
+        return function(root)
+            local entry = retriever.cache[buf]
+            entry.root = root
+            entry.fresh = true
+            if not cached then
+                local date = os.date("*t")
+                assert(type(date) ~= "string")
+                entry.updated = date
+            end
+            entry.provider_name = provider_name
+
+            for _, callback in ipairs(entry.post_update_callbacks) do
+                callback(root, provider_name, retriever.providers_config[provider_name])
+            end
+
+            entry.update_in_progress = false
+            entry.post_update_callbacks = {}
+        end
+    end
+
+    local entry = retriever.cache[buf]
+    table.insert(entry.post_update_callbacks, on_retrieve)
+
+    if entry.fresh then
+        log.debug("Using symbols from cache.")
+        _on_retrieve(entry.provider_name, true)(entry.root)
+        return
+    end
+
+    if entry.update_in_progress then
+        log.debug("Symbols request in progress, adding callback.")
+        return
+    end
+    entry.update_in_progress = true
+    log.debug("Requesting symbols (no symbols in cache or requests in progress).")
+
+    for _, provider in ipairs(retriever.providers) do
+        local cache = {}
+        if provider.init ~= nil then
+            local config = retriever.providers_config[provider.name]
+            provider.init(cache, config)
+        end
+        if provider.supports(cache, buf) then
+            if provider.async_get_symbols ~= nil then
+                provider.async_get_symbols(
+                    cache,
+                    buf,
+                    _on_retrieve(provider.name, false),
+                    on_fail(provider)
+                )
+            else
+                local ok, symbol = provider.get_symbols(cache, buf)
+                if not ok then
+                    on_fail(provider)()
+                else
+                    assert(symbol ~= nil)
+                    _on_retrieve(provider.name, false)(symbol)
+                end
+            end
+            return
+        end
+    end
+end
+
 ---@class Sidebar
 ---@field gs GlobalState
 ---@field deleted boolean
@@ -884,9 +1052,9 @@ end
 ---@field buf integer
 ---@field source_win integer
 ---@field visible boolean
+---@field symbols_retriever SymbolsRetriever
 ---@field buf_symbols table<integer, Symbols>
 ---@field lines table<Symbol, integer>
----@field curr_provider Provider | nil
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
 ---@field preview_config PreviewConfig
 ---@field preview Preview
@@ -907,9 +1075,9 @@ local function sidebar_new_obj()
         buf = -1,
         source_win = -1,
         visible = false,
+        symbols_cache = SymbolsCache_new(),
         buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
-        curr_provider = nil,
         symbol_display_config = {},
         preview = preview_new_obj(),
         details = details_window_new_obj(),
@@ -1144,11 +1312,10 @@ local function sidebar_current_symbol(sidebar)
 end
 
 ---@param symbols Symbols
----@param symbol_display_config table<string, SymbolDisplayConfig>
 ---@param chars CharConfig
 ---@param show_guide_lines boolean
 ---@return string[], table<Symbol, integer>, Highlight[], string[]
-local function process_symbols(symbols, symbol_display_config, chars, show_guide_lines)
+local function process_symbols(symbols, chars, show_guide_lines)
     ---@type string[]
     local details = {}
     local symbol_to_line = {}
@@ -1168,8 +1335,22 @@ local function process_symbols(symbols, symbol_display_config, chars, show_guide
     end
     get_symbol_to_line(symbols.root, 1)
 
+    ---@return boolean
+    local function check_if_any_folded()
+        for _, symbol in ipairs(symbols.root.children) do
+            if symbols.states[symbol].visible_children > 0 then
+                return true
+            end
+        end
+        return false
+    end
+    local any_folded = check_if_any_folded()
+
     local buf_lines = {}
     local highlights = {}
+
+    local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
+    local symbol_display_config = cfg.symbols_display_config(symbols.provider_config, symbols.provider, ft)
 
     ---@param symbol Symbol
     ---@param indent string
@@ -1189,7 +1370,11 @@ local function process_symbols(symbols, symbol_display_config, chars, show_guide
                             prefix = chars.guide_middle_item .. " "
                         end
                     else
-                        prefix = "  "
+                        if any_folded then
+                            prefix = "  "
+                        else
+                            prefix = " "
+                        end
                     end
                 elseif state.folded then
                     prefix = chars.folded .. " "
@@ -1233,12 +1418,10 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_refresh_view(sidebar)
-    local provider = sidebar.curr_provider
-    assert(provider ~= nil)
+    log.debug("sidebar_refresh_view")
 
     local buf_lines, symbol_to_line, highlights, details = process_symbols(
         sidebar_current_symbols(sidebar),
-        sidebar.symbol_display_config,
         sidebar.char_config,
         sidebar.show_guide_lines
     )
@@ -1263,10 +1446,7 @@ local function sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
----@param providers Provider[]
----@param config Config
-local function sidebar_refresh_symbols(sidebar, providers, config)
-
+local function sidebar_refresh_symbols(sidebar)
     ---@return Symbol?
     local function _find_symbol_with_name(symbol, name)
         for _, sym in ipairs(symbol.children) do
@@ -1296,9 +1476,12 @@ local function sidebar_refresh_symbols(sidebar, providers, config)
     end
 
     ---@param new_root Symbol
-    local function _refresh_sidebar(new_root)
+    local function _refresh_sidebar(new_root, provider, provider_config)
+        log.debug("_refresh_sidebar")
         local current_symbols = sidebar_current_symbols(sidebar)
         local new_symbols = Symbols_new()
+        new_symbols.provider = provider
+        new_symbols.provider_config = provider_config
         new_symbols.buf = sidebar_source_win_buf(sidebar)
         new_symbols.root = new_root
         new_symbols.states = SymbolStates_build(new_root)
@@ -1308,42 +1491,8 @@ local function sidebar_refresh_symbols(sidebar, providers, config)
         sidebar_refresh_view(sidebar)
     end
 
-    ---@param provider Provider
-    local function on_fail(provider)
-        return function()
-            vim.notify(provider.name .. " failed.", vim.log.levels.ERROR)
-        end
-    end
-
     local buf = sidebar_source_win_buf(sidebar)
-    for _, provider in ipairs(providers) do
-        local cache = {}
-        if provider.init ~= nil then
-            provider.init(cache, config[provider.name])
-        end
-        if provider.supports(cache, buf) then
-            sidebar.curr_provider = provider
-            local ft = vim.bo[buf].filetype
-            sidebar.symbol_display_config = cfg.symbols_display_config(config, provider.name, ft)
-            if provider.async_get_symbols ~= nil then
-                provider.async_get_symbols(
-                    cache,
-                    buf,
-                    _refresh_sidebar,
-                    on_fail(provider)
-                )
-            else
-                local ok, symbol = provider.get_symbols(cache, buf)
-                if not ok then
-                    on_fail(provider)()
-                else
-                    assert(symbol ~= nil)
-                    _refresh_sidebar(symbol)
-                end
-            end
-            return
-        end
-    end
+    SymbolsRetriever_retrieve(sidebar.symbols_retriever, buf, _refresh_sidebar)
 end
 
 ---@param symbols Symbols
@@ -1724,13 +1873,15 @@ local function sidebar_on_cursor_move(sidebar)
 end
 
 ---@param sidebar Sidebar
+---@param symbols_retriever SymbolsRetriever
 ---@param num integer
 ---@param config SidebarConfig
 ---@param gs GlobalState
 ---@param debug boolean
-local function sidebar_new(sidebar, num, config, gs, debug)
+local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.deleted = false
     sidebar.source_win = vim.api.nvim_get_current_win()
+    sidebar.symbols_retriever = symbols_retriever
 
     sidebar.gs = gs
     sidebar.preview_config = config.preview
@@ -1853,6 +2004,8 @@ end
 ---@config Config
 ---@param gs GlobalState
 local function setup_dev(cmds, autocmd_group, sidebars, config, gs)
+    LOG_LEVEL = config.dev.log_level
+
     ---@param pkg string
     local function unload_package(pkg)
         local esc_pkg = pkg:gsub("([^%w])", "%%%1")
@@ -1896,7 +2049,7 @@ local function setup_dev(cmds, autocmd_group, sidebars, config, gs)
     local dev_action_to_fun = {
         reload = reload,
         debug = debug,
-        ["show-config"] = show_config
+        ["show-config"] = show_config,
     }
 
     for key, action in pairs(config.dev.keymaps) do
@@ -1992,15 +2145,17 @@ function M.setup(config)
         }
     }
 
-    ---@type Sidebar[]
-    local sidebars = {}
-
     ---@type Provider[]
     local providers = {
         LspProvider,
         VimdocProvider,
         MarkdownProvider,
     }
+
+    local symbols_retriever = SymbolsRetriever_new(providers, _config.providers)
+
+    ---@type Sidebar[]
+    local sidebars = {}
 
     if _config.dev.enabled then
         setup_dev(cmds, global_autocmd_group, sidebars, _config, gs)
@@ -2020,12 +2175,29 @@ function M.setup(config)
                     table.insert(sidebars, sidebar)
                     num = #sidebars
                 end
-                sidebar_new(sidebar, num, _config.sidebar, gs, _config.dev.enabled)
+                sidebar_new(sidebar, symbols_retriever, num, _config.sidebar, gs, _config.dev.enabled)
             end
             sidebar_open(sidebar)
-            sidebar_refresh_symbols(sidebar, providers, _config)
+            sidebar_refresh_symbols(sidebar)
         end,
         { desc = "" }
+    )
+
+    create_command(
+        cmds,
+        "SymbolsDebugToggle",
+        function()
+            _config.dev.enabled = not _config.dev.enabled
+            for _, sidebar in ipairs(sidebars) do
+                sidebar.details.show_debug_info = _config.dev.enabled
+            end
+            if _config.dev.enabled then
+                LOG_LEVEL = _config.dev.log_level
+            else
+                LOG_LEVEL = vim.log.levels.ERROR
+            end
+        end,
+        {}
     )
 
     create_command(
@@ -2060,9 +2232,7 @@ function M.setup(config)
     create_command(
         cmds,
         "SymbolsGoTo",
-        function()
-
-        end,
+        function() end,
         {}
     )
 
@@ -2105,6 +2275,18 @@ function M.setup(config)
     )
 
     vim.api.nvim_create_autocmd(
+        { "BufWritePost", "FileChangedShellPost" },
+        {
+            group = global_autocmd_group,
+            pattern = "*",
+            callback = function(t)
+                local source_buf = t.buf
+                symbols_retriever.cache[source_buf].fresh = false
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
         { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
         {
             group = global_autocmd_group,
@@ -2113,7 +2295,7 @@ function M.setup(config)
                 local source_buf = t.buf
                 for _, sidebar in ipairs(sidebars) do
                     if sidebar_source_win_buf(sidebar) == source_buf then
-                        sidebar_refresh_symbols(sidebar, providers, _config)
+                        sidebar_refresh_symbols(sidebar)
                     end
                 end
             end

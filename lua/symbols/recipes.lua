@@ -89,75 +89,79 @@ M.LspKindTypescriptAscii = {
 }
 
 M.AsciiSymbols = {
-    lsp = {
-        filetype = {
-            json = { symbol_display = M.LspKindJsonAscii },
-            yaml = { symbol_display = M.LspKindYamlAscii },
-            lua = { symbol_display = M.LspKindLuaAscii },
-            go = { symbol_display = M.LspKindGoAscii },
-            python = { symbol_display = M.LspKindPythonAscii },
-            sh = { symbol_display = M.LspKindBashAscii },
-            css = { symbol_display = M.LspKindCssAscii },
-            javascript = { symbol_display = M.LspKindJavascriptAscii },
-            typescript = { symbol_display = M.LspKindTypescriptAscii },
-            default = { symbol_display = {} },
-        }
-    },
-    vimdoc = { filetype = { default = { symbol_display = M.VimdocKindAscii } } },
-    markdown = { filetype = { default = { symbol_display = M.MarkdownKindAscii } } },
+    providers = {
+        lsp = {
+            filetype = {
+                json = { symbol_display = M.LspKindJsonAscii },
+                yaml = { symbol_display = M.LspKindYamlAscii },
+                lua = { symbol_display = M.LspKindLuaAscii },
+                go = { symbol_display = M.LspKindGoAscii },
+                python = { symbol_display = M.LspKindPythonAscii },
+                sh = { symbol_display = M.LspKindBashAscii },
+                css = { symbol_display = M.LspKindCssAscii },
+                javascript = { symbol_display = M.LspKindJavascriptAscii },
+                typescript = { symbol_display = M.LspKindTypescriptAscii },
+                default = { symbol_display = {} },
+            }
+        },
+        vimdoc = { filetype = { default = { symbol_display = M.VimdocKindAscii } } },
+        markdown = { filetype = { default = { symbol_display = M.MarkdownKindAscii } } },
+    }
 }
 
 M.FancySymbols = {
-    lsp = {
-        filetype = {
-            default = {
-                symbol_display = {
-                    File = { kind = "󰈔" },
-                    Module = { kind = "󰆧" },
-                    Namespace = { kind = "󰅪" },
-                    Package = { kind = "󰏗" },
-                    Class = { kind = "𝓒" },
-                    Method = { kind = "ƒ" },
-                    Property = { kind = "" },
-                    Field = { kind = "󰆨" },
-                    Constructor = { kind = "" },
-                    Enum = { kind = "ℰ" },
-                    Interface = { kind = "󰜰" },
-                    Function = { kind = "" },
-                    Variable = { kind = "" },
-                    Constant = { kind = "" },
-                    String = { kind = "𝓐" },
-                    Number = { kind = "#" },
-                    Boolean = { kind = "⊨" },
-                    Array = { kind = "󰅪" },
-                    Object = { kind = "⦿" },
-                    Key = { kind = "🔐" },
-                    Null = { kind = "NULL" },
-                    EnumMember = { kind = "" },
-                    Struct = { kind = "𝓢" },
-                    Event = { kind = "🗲" },
-                    Operator = { kind = "+" },
-                    TypeParameter = { kind = "𝙏" },
-                    Component = { kind = "󰅴" },
-                    Fragment = { kind = "󰅴" },
+    providers = {
+        lsp = {
+            filetype = {
+                default = {
+                    symbol_display = {
+                        File = { kind = "󰈔" },
+                        Module = { kind = "󰆧" },
+                        Namespace = { kind = "󰅪" },
+                        Package = { kind = "󰏗" },
+                        Class = { kind = "𝓒" },
+                        Method = { kind = "ƒ" },
+                        Property = { kind = "" },
+                        Field = { kind = "󰆨" },
+                        Constructor = { kind = "" },
+                        Enum = { kind = "ℰ" },
+                        Interface = { kind = "󰜰" },
+                        Function = { kind = "" },
+                        Variable = { kind = "" },
+                        Constant = { kind = "" },
+                        String = { kind = "𝓐" },
+                        Number = { kind = "#" },
+                        Boolean = { kind = "⊨" },
+                        Array = { kind = "󰅪" },
+                        Object = { kind = "⦿" },
+                        Key = { kind = "🔐" },
+                        Null = { kind = "NULL" },
+                        EnumMember = { kind = "" },
+                        Struct = { kind = "𝓢" },
+                        Event = { kind = "🗲" },
+                        Operator = { kind = "+" },
+                        TypeParameter = { kind = "𝙏" },
+                        Component = { kind = "󰅴" },
+                        Fragment = { kind = "󰅴" },
+                    }
                 }
             }
-        }
-    },
-    vimdoc = { filetype = { default = { symbol_display = {
-        H1 = { kind = "#" },
-        H2 = { kind = "##" },
-        H3 = { kind = "###" },
-        Tag = { kind = "*" },
-    }}}},
-    markdown = { filetype = { default = { symbol_display = {
-        H1 = { kind = "#" },
-        H2 = { kind = "##" },
-        H3 = { kind = "###" },
-        H4 = { kind = "####" },
-        H5 = { kind = "#####" },
-        H6 = { kind = "######" },
-    }}}},
+        },
+        vimdoc = { filetype = { default = { symbol_display = {
+            H1 = { kind = "#" },
+            H2 = { kind = "##" },
+            H3 = { kind = "###" },
+            Tag = { kind = "*" },
+        }}}},
+        markdown = { filetype = { default = { symbol_display = {
+            H1 = { kind = "#" },
+            H2 = { kind = "##" },
+            H3 = { kind = "###" },
+            H4 = { kind = "####" },
+            H5 = { kind = "#####" },
+            H6 = { kind = "######" },
+        }}}},
+    }
 }
 
 return M
