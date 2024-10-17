@@ -1945,7 +1945,7 @@ local function create_command(cmds, name, cmd, opts)
 end
 
 local function remove_commands(cmds)
-    for cmd, _ in pairs(cmds) do
+    for _, cmd in ipairs(cmds) do
         vim.api.nvim_del_user_command(cmd)
     end
 end
@@ -2198,6 +2198,42 @@ function M.setup(config)
             end
         end,
         {}
+    )
+
+    local string_to_log_level = {
+        error = vim.log.levels.ERROR,
+        warning = vim.log.levels.WARN,
+        info = vim.log.levels.INFO,
+        debug = vim.log.levels.DEBUG,
+        trace = vim.log.levels.TRACE,
+        off = vim.log.levels.off,
+    }
+    local log_levels = vim.tbl_keys(string_to_log_level)
+
+    create_command(
+        cmds,
+        "SymbolsDebugLevel",
+        function(e)
+            local arg = e.fargs[1]
+            local new_log_level = string_to_log_level[arg]
+            if new_log_level == nil then
+                log.error("Invalid log level: " .. arg)
+            else
+                LOG_LEVEL = new_log_level
+            end
+        end,
+        {
+            nargs = 1,
+            complete = function(arg, _)
+                local suggestions = {}
+                for _, log_level in ipairs(log_levels) do
+                    if vim.startswith(log_level, arg) then
+                        table.insert(suggestions, log_level)
+                    end
+                end
+                return suggestions
+            end
+        }
     )
 
     create_command(
