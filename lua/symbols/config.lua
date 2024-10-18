@@ -54,7 +54,14 @@ local M = {}
 ---@field log_level integer
 ---@field keymaps table<string, DevAction>
 
+---@class AutoResizeConfig
+---@field enabled boolean
+---@field min_width integer
+---@field max_width integer
+
 ---@class SidebarConfig
+---@field auto_resize AutoResizeConfig
+---@field fixed_width integer
 ---@field symbol_filter fun(ft: string, symbol: Symbol): boolean
 ---@field show_inline_details boolean
 ---@field show_details_pop_up boolean
@@ -96,6 +103,12 @@ local M = {}
 M.default = {
     hide_cursor = false,
     sidebar = {
+        auto_resize = {
+            enabled = true,
+            min_width = 20,
+            max_width = 40,
+        },
+        fixed_width = 30,
         symbol_filter = function(_, _) return true end,
         show_inline_details = false,
         show_details_pop_up = false,

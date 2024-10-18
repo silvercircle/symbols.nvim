@@ -1059,6 +1059,8 @@ end
 ---@field show_inline_details boolean
 ---@field show_guide_lines boolean
 ---@field wrap boolean
+---@field auto_resize AutoResizeConfig
+---@field fixed_width integer
 ---@field keymaps KeymapsConfig
 ---@field symbol_filter SymbolFilter
 
@@ -1081,6 +1083,8 @@ local function sidebar_new_obj()
         show_inline_details = false,
         show_guide_lines = false,
         wrap = false,
+        auto_resize = vim.deepcopy(cfg.default.sidebar.auto_resize, true),
+        fixed_width = cfg.default.sidebar.fixed_width,
         keymaps = cfg.default.sidebar.keymaps,
         symbol_state = {},
     }
@@ -1228,6 +1232,31 @@ local function sidebar_str(sidebar)
     return table.concat(lines, "\n")
 end
 
+---@param sidebar Sidebar
+---@param buf_lines string[] | nil
+local function sidebar_refresh_size(sidebar, buf_lines)
+    if sidebar.visible then
+        if buf_lines == nil then
+            buf_lines = vim.api.nvim_buf_get_lines(sidebar.buf, 0, -1, false)
+        end
+        local vert_resize = sidebar.fixed_width
+        if sidebar.auto_resize.enabled then
+            local max_line_len = 0
+            for _, line in ipairs(buf_lines) do
+                max_line_len = math.max(max_line_len, #line)
+            end
+            vert_resize = max_line_len + 1
+            vert_resize = math.max(sidebar.auto_resize.min_width, vert_resize)
+            vert_resize = math.min(sidebar.auto_resize.max_width, vert_resize)
+        end
+        log.debug("vertival resize: " .. tostring(vert_resize))
+        local original_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_current_win(sidebar.win)
+        vim.cmd("vertical resize " .. tostring(vert_resize))
+        vim.api.nvim_set_current_win(original_win)
+    end
+end
+
 local function sidebar_open(sidebar)
     if sidebar.visible then return end
 
@@ -1250,6 +1279,7 @@ local function sidebar_open(sidebar)
     win_set_option(sidebar.win, "wrap", sidebar.wrap)
 
     sidebar.visible = true
+    sidebar_refresh_size(sidebar, nil)
 end
 
 ---@param sidebar Sidebar
@@ -1437,6 +1467,8 @@ local function sidebar_refresh_view(sidebar)
             )
         end
     end
+
+    sidebar_refresh_size(sidebar, buf_lines)
 end
 
 ---@param sidebar Sidebar
@@ -1884,6 +1916,8 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.char_config = config.chars
     sidebar.keymaps = config.keymaps
     sidebar.wrap = config.wrap
+    sidebar.auto_resize = vim.deepcopy(config.auto_resize, true)
+    sidebar.fixed_width = config.fixed_width
     sidebar.symbol_filter = config.symbol_filter
 
     sidebar.details.show_debug_info = debug
