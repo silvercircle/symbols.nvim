@@ -964,8 +964,6 @@ end
 ---@param buf integer
 ---@param on_retrieve fun(symbol: Symbol, provider_name: string, provider_config: table)
 local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
-    log.debug("retrieve buf=" .. buf)
-
     ---@param provider Provider
     local function on_fail(provider)
         return function()
@@ -1002,20 +1000,16 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
     end
 
     local entry = retriever.cache[buf]
-    table.insert(entry.post_update_callbacks, on_retrieve)
 
     if entry.fresh then
-        log.debug("Using symbols from cache.")
-        _on_retrieve(entry.provider_name, true)(entry.root)
         return
     end
 
     if entry.update_in_progress then
-        log.debug("Symbols request in progress, adding callback.")
+        -- TODO: do not add multiple callbacks for the same sidebar
+        table.insert(entry.post_update_callbacks, on_retrieve)
         return
     end
-    entry.update_in_progress = true
-    log.debug("Requesting symbols (no symbols in cache or requests in progress).")
 
     for _, provider in ipairs(retriever.providers) do
         local cache = {}
@@ -1024,6 +1018,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
             provider.init(cache, config)
         end
         if provider.supports(cache, buf) then
+            table.insert(entry.post_update_callbacks, on_retrieve)
             if provider.async_get_symbols ~= nil then
                 provider.async_get_symbols(
                     cache,
@@ -1040,6 +1035,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
                     _on_retrieve(provider.name, false)(symbol)
                 end
             end
+            entry.update_in_progress = true
             return
         end
     end
@@ -1418,8 +1414,6 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_refresh_view(sidebar)
-    log.debug("sidebar_refresh_view")
-
     local buf_lines, symbol_to_line, highlights, details = process_symbols(
         sidebar_current_symbols(sidebar),
         sidebar.char_config,
@@ -1477,7 +1471,6 @@ local function sidebar_refresh_symbols(sidebar)
 
     ---@param new_root Symbol
     local function _refresh_sidebar(new_root, provider, provider_config)
-        log.debug("_refresh_sidebar")
         local current_symbols = sidebar_current_symbols(sidebar)
         local new_symbols = Symbols_new()
         new_symbols.provider = provider
