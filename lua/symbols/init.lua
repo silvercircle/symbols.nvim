@@ -1002,6 +1002,8 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
     local entry = retriever.cache[buf]
 
     if entry.fresh then
+        table.insert(entry.post_update_callbacks, on_retrieve)
+        _on_retrieve(entry.provider_name, true)(entry.root)
         return
     end
 
