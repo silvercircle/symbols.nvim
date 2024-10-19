@@ -126,7 +126,7 @@ M.FancySymbols = {
                         Constructor = { kind = "" },
                         Enum = { kind = "ℰ" },
                         Interface = { kind = "󰜰" },
-                        Function = { kind = "" },
+                        Function = { kind = "ƒ" },
                         Variable = { kind = "" },
                         Constant = { kind = "" },
                         String = { kind = "𝓐" },

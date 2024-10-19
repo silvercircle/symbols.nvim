@@ -1251,7 +1251,6 @@ local function sidebar_refresh_size(sidebar, buf_lines)
             vert_resize = math.max(sidebar.auto_resize.min_width, vert_resize)
             vert_resize = math.min(sidebar.auto_resize.max_width, vert_resize)
         end
-        log.debug("vertival resize: " .. tostring(vert_resize))
         local original_win = vim.api.nvim_get_current_win()
         vim.api.nvim_set_current_win(sidebar.win)
         vim.cmd("vertical resize " .. tostring(vert_resize))
@@ -1464,7 +1463,7 @@ local function sidebar_refresh_view(sidebar)
                 {
                     virt_text = { { detail, "Comment" } },
                     virt_text_pos = "eol",
-                    hl_mode = 'combine',
+                    hl_mode = "combine",
                 }
             )
         end
@@ -1550,9 +1549,9 @@ local function sidebar_goto_symbol(sidebar)
         sidebar.source_win,
         { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
     )
-    vim.fn.win_execute(sidebar.source_win, 'normal! zt')
+    vim.fn.win_execute(sidebar.source_win, "normal! zz")
     local r = symbol.range
-    flash_highlight(sidebar.source_win, 400, r["end"].line - r.start.line + 1)
+    flash_highlight(sidebar.source_win, 400, 1)
 end
 
 ---@param sidebar Sidebar
@@ -2057,7 +2056,7 @@ local function setup_dev(cmds, autocmd_group, sidebars, config, gs)
 
         reset_cursor(gs.cursor)
 
-        vim.notify("symbols.nvim reloaded", vim.log.levels.INFO)
+        log.info("symbols.nvim reloaded")
     end
 
     local function debug()
