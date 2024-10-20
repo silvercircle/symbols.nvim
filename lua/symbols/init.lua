@@ -1482,11 +1482,11 @@ local function get_line_for_each_symbol(symbols)
     ---@param symbol Symbol
     ---@param line integer
     local function get_lines(symbol, line)
-        if symbols.states[symbol].folded then return line + 1 end
+        if symbols.states[symbol].folded then return line end
         for _, child in ipairs(symbol.children) do
             if symbols.states[child].visible then
                 lines[child] = line
-                line = get_lines(child, line)
+                line = get_lines(child, line + 1)
             end
         end
         return line
