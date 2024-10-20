@@ -1864,7 +1864,9 @@ local function sidebar_fold_one_level(sidebar)
     local function find_level_to_fold(symbol)
         local max_level = (symbols.states[symbol].folded and 1) or symbol.level
         for _, sym in ipairs(symbol.children) do
-            max_level = math.max(max_level, find_level_to_fold(sym))
+            if #sym.children > 0 then
+                max_level = math.max(max_level, find_level_to_fold(sym))
+            end
         end
         return max_level
     end
