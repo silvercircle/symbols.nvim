@@ -529,6 +529,8 @@ local function _preview_open(preview, params)
         col = -params.cursor[2]-1,
         border = "single",
         style = "minimal",
+        -- to allow other floating windows (like symbol peek) in front
+        zindex = 45,
     }
     preview.win = vim.api.nvim_open_win(params.source_buf, false, opts)
     if params.config.show_line_number then
