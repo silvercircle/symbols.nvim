@@ -77,6 +77,12 @@ local function win_set_option(win, name, value)
     vim.api.nvim_set_option_value(name, value, { win = win })
 end
 
+---@param win integer
+---@return boolean
+local function is_floating_win(win)
+  return vim.api.nvim_win_get_config(win).relative ~= ""
+end
+
 local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
 local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
 
@@ -821,18 +827,27 @@ end
 ---@field hidden boolean
 ---@field original string
 
+---@class GlobalSettings
+---@field open_direction OpenDirection
+
 ---@class GlobalState
 ---@field cursor CursorState
+---@field settings GlobalSettings
 
 ---@return GlobalState
-local function global_state_new()
-    return {
+local function GlobalState_new()
+    ---@type GlobalState
+    local obj = {
         cursor = {
             hide = false,
             hidden = false,
-            origina = vim.o.guicursor,
-        }
+            original = vim.o.guicursor,
+        },
+        settings = {
+            open_direction = cfg.default.sidebar.open_direction,
+        },
     }
+    return obj
 end
 
 ---@class SymbolState
@@ -1092,12 +1107,11 @@ local function WinSettings_apply(win, settings)
         vim.api.nvim_set_option_value(name, value, { win = win })
     end
 
-    set_opt("number", settings.number)
-    set_opt("relativenumber", settings.relativenumber)
-    set_opt("signcolumn", settings.signcolumn)
-    set_opt("cursorline", settings.cursorline)
-    set_opt("winfixwidth", settings.winfixwidth)
-    set_opt("wrap", settings.wrap)
+    for opt_name, opt_value in pairs(settings) do
+        if opt_value ~= nil then
+            set_opt(opt_name, opt_value)
+        end
+    end
 end
 
 ---@param cursor CursorState
@@ -1142,7 +1156,7 @@ end
 ---@return Sidebar
 local function sidebar_new_obj()
     return {
-        gs = global_state_new(),
+        gs = GlobalState_new(),
         deleted = false,
         win = -1,
         win_settings = WinSettings_new(),
@@ -1332,15 +1346,46 @@ local function sidebar_refresh_size(sidebar, buf_lines)
     end
 end
 
+---@param sidebar Sidebar
+---@return integer
+local function sidebar_open_bare_win(sidebar)
+
+    ---@param dir string
+    local function open_win(dir)
+        assert(dir == "left" or dir == "right", "invalid dir")
+        local width = sidebar.fixed_width
+        local dir_cmd = (dir == "left" and "leftabove") or "rightbelow"
+        vim.cmd("vertical " .. dir_cmd .. " " .. tostring(width) .. "split")
+    end
+
+    local dir = sidebar.gs.settings.open_direction
+    if dir == "left" or dir == "right" then
+        open_win(dir)
+    else
+        -- TODO: ignore floating windows
+        local wins = vim.api.nvim_tabpage_list_wins(0)
+        local curr_win = vim.api.nvim_get_current_win()
+        if dir == "try-left" then
+            local left_ok = wins[1] == curr_win
+            if left_ok then open_win("left") else open_win("right") end
+        elseif dir == "try-right" then
+            local right_ok = wins[#wins] == curr_win
+            if right_ok then open_win("right") else open_win("left") end
+        else
+            assert(false, "invalid dir")
+        end
+
+    end
+
+    return vim.api.nvim_get_current_win()
+end
+
 local function sidebar_open(sidebar)
     if sidebar.visible then return end
 
     local original_win = vim.api.nvim_get_current_win()
     vim.api.nvim_set_current_win(sidebar.source_win)
-    vim.cmd("vs")
-    vim.cmd("vertical resize " .. 40)
-    sidebar.win = vim.api.nvim_get_current_win()
-
+    sidebar.win = sidebar_open_bare_win(sidebar)
     vim.api.nvim_set_current_win(original_win)
     vim.api.nvim_win_set_buf(sidebar.win, sidebar.buf)
 
@@ -1359,6 +1404,7 @@ local function sidebar_open(sidebar)
 
     sidebar.visible = true
     sidebar_refresh_size(sidebar, nil)
+    vim.cmd("wincmd =")
 end
 
 ---@param sidebar Sidebar
@@ -2274,13 +2320,9 @@ function M.setup(config)
     local cmds = {}
 
     ---@type GlobalState
-    local gs = {
-        cursor = {
-            hide = _config.hide_cursor,
-            hidden = false,
-            original = vim.o.guicursor,
-        }
-    }
+    local gs = GlobalState_new()
+    gs.cursor.hide = _config.hide_cursor
+    gs.settings.open_direction = _config.sidebar.open_direction
 
     ---@type Provider[]
     local providers = {

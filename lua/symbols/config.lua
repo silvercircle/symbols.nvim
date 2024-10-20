@@ -59,7 +59,14 @@ local M = {}
 ---@field min_width integer
 ---@field max_width integer
 
+---@alias OpenDirection
+---| "left"
+---| "right"
+---| "try-left"
+---| "try-right"
+
 ---@class SidebarConfig
+---@field open_direction OpenDirection
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field symbol_filter fun(ft: string, symbol: Symbol): boolean
@@ -103,6 +110,7 @@ local M = {}
 M.default = {
     hide_cursor = false,
     sidebar = {
+        open_direction = "try-left",
         auto_resize = {
             enabled = true,
             min_width = 20,
