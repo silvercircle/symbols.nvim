@@ -1043,10 +1043,83 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
     end
 end
 
+---@class WinSettings
+---@field number boolean | nil
+---@field relativenumber boolean | nil
+---@field signcolumn string | nil
+---@field cursorline boolean | nil
+---@field winfixwidth boolean | nil
+---@field wrap boolean | nil
+
+---@return WinSettings
+local function WinSettings_new()
+    return {
+        number = nil,
+        relativenumber = nil,
+        signcolumn = nil,
+        cursorline = nil,
+        winfixwidth = nil,
+        wrap = nil,
+    }
+end
+
+---@param win integer
+---@return WinSettings
+local function WinSettings_get(win)
+
+    ---@param opt string
+    local function get_opt(opt)
+        return vim.api.nvim_get_option_value(opt, { win = win })
+    end
+
+    return {
+        number = get_opt("number"),
+        relativenumber = get_opt("relativenumber"),
+        signcolumn = get_opt("signcolumn"),
+        cursorline = get_opt("cursorline"),
+        winfixwidth = get_opt("winfixwidth"),
+        wrap = get_opt("wrap")
+    }
+end
+
+---@param win integer
+---@param settings WinSettings
+local function WinSettings_apply(win, settings)
+
+    ---@param name string
+    ---@param value any
+    local function set_opt(name, value)
+        vim.api.nvim_set_option_value(name, value, { win = win })
+    end
+
+    set_opt("number", settings.number)
+    set_opt("relativenumber", settings.relativenumber)
+    set_opt("signcolumn", settings.signcolumn)
+    set_opt("cursorline", settings.cursorline)
+    set_opt("winfixwidth", settings.winfixwidth)
+    set_opt("wrap", settings.wrap)
+end
+
+---@param cursor CursorState
+local function hide_cursor(cursor)
+    if not cursor.hidden then
+        local cur = vim.o.guicursor:match("n.-:(.-)[-,]")
+        vim.opt.guicursor:append("n:" .. cur .. "-Cursorline")
+        cursor.hidden = true
+    end
+end
+
+---@param cursor CursorState
+local function reset_cursor(cursor)
+    vim.o.guicursor = cursor.original
+    cursor.hidden = false
+end
+
 ---@class Sidebar
 ---@field gs GlobalState
 ---@field deleted boolean
 ---@field win integer
+---@field win_settings WinSettings
 ---@field buf integer
 ---@field source_win integer
 ---@field visible boolean
@@ -1072,6 +1145,7 @@ local function sidebar_new_obj()
         gs = global_state_new(),
         deleted = false,
         win = -1,
+        win_settings = WinSettings_new(),
         buf = -1,
         source_win = -1,
         visible = false,
@@ -1268,16 +1342,20 @@ local function sidebar_open(sidebar)
     sidebar.win = vim.api.nvim_get_current_win()
 
     vim.api.nvim_set_current_win(original_win)
-
     vim.api.nvim_win_set_buf(sidebar.win, sidebar.buf)
 
-    win_set_option(sidebar.win, "number", false)
-    win_set_option(sidebar.win, "relativenumber", false)
-    win_set_option(sidebar.win, "signcolumn", "no")
-    win_set_option(sidebar.win, "cursorline", true)
-    win_set_option(sidebar.win, "winfixwidth", true)
-
-    win_set_option(sidebar.win, "wrap", sidebar.wrap)
+    sidebar.win_settings = WinSettings_get(sidebar.win)
+    WinSettings_apply(
+        sidebar.win,
+        {
+            number = false,
+            relativenumber = false,
+            signcolumn = "no",
+            cursorline = true,
+            winfixwidth = true,
+            wrap = sidebar.wrap,
+        }
+    )
 
     sidebar.visible = true
     sidebar_refresh_size(sidebar, nil)
@@ -1286,6 +1364,18 @@ end
 ---@param sidebar Sidebar
 local function sidebar_preview_close(sidebar)
     preview_close(sidebar.preview)
+end
+
+--- Restore window state to default. Useful when opening a file in the sidebar window.
+---@param sidebar Sidebar
+local function sidebar_win_restore(sidebar)
+    sidebar_preview_close(sidebar)
+    details_close(sidebar.details)
+    WinSettings_apply(sidebar.win, sidebar.win_settings)
+    reset_cursor(sidebar.gs.cursor)
+    sidebar.visible = false
+    sidebar.win = -1
+    vim.cmd("wincmd =")
 end
 
 local function sidebar_close(sidebar)
@@ -1772,21 +1862,6 @@ end
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_preview(sidebar)
     preview_toggle_auto_show(sidebar.preview, _sidebar_preview_open_params(sidebar))
-end
-
----@param cursor CursorState
-local function hide_cursor(cursor)
-    if not cursor.hidden then
-        local cur = vim.o.guicursor:match("n.-:(.-)[-,]")
-        vim.opt.guicursor:append("n:" .. cur .. "-Cursorline")
-        cursor.hidden = true
-    end
-end
-
----@param cursor CursorState
-local function reset_cursor(cursor)
-    vim.o.guicursor = cursor.original
-    cursor.hidden = false
 end
 
 ---@param sidebar Sidebar
@@ -2394,6 +2469,23 @@ function M.setup(config)
                 for _, sidebar in ipairs(sidebars) do
                     if sidebar_source_win_buf(sidebar) == source_buf then
                         sidebar_refresh_symbols(sidebar)
+                    end
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "BufHidden" },
+        {
+            group = global_autocmd_group,
+            pattern = "*",
+            callback = function(t)
+                local buf = tonumber(t.buf)
+                for _, sidebar in ipairs(sidebars) do
+                    if sidebar.buf == buf then
+                        sidebar_win_restore(sidebar)
+                        return
                     end
                 end
             end
