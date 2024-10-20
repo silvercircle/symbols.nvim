@@ -1339,29 +1339,33 @@ local function sidebar_current_symbol(sidebar)
 end
 
 ---@param symbols Symbols
----@param chars CharConfig
----@param show_guide_lines boolean
----@return string[], table<Symbol, integer>, Highlight[], string[]
-local function process_symbols(symbols, chars, show_guide_lines)
-    ---@type string[]
-    local details = {}
-    local symbol_to_line = {}
+---@return table<Symbol, integer>
+local function get_line_for_each_symbol(symbols)
+    local lines = {}
 
     ---@param symbol Symbol
     ---@param line integer
-    local function get_symbol_to_line(symbol, line)
+    local function get_lines(symbol, line)
         if symbols.states[symbol].folded then return line + 1 end
-        for _, sym in ipairs(symbol.children) do
-            if symbols.states[sym].visible then
-                symbol_to_line[sym] = line
-                table.insert(details, sym.detail)
-                line = get_symbol_to_line(sym, line)
+        for _, child in ipairs(symbol.children) do
+            if symbols.states[child].visible then
+                lines[child] = line
+                line = get_lines(child, line)
             end
         end
         return line
     end
-    get_symbol_to_line(symbols.root, 1)
 
+    get_lines(symbols.root, 1)
+
+    return lines
+end
+
+---@param symbols Symbols
+---@param chars CharConfig
+---@param show_guide_lines boolean
+---@return string[], Highlight[]
+local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_lines)
     ---@return boolean
     local function check_if_any_folded()
         for _, symbol in ipairs(symbols.root.children) do
@@ -1430,9 +1434,9 @@ local function process_symbols(symbols, chars, show_guide_lines)
         end
         return line_nr
     end
-    get_buf_lines_and_highlights(symbols.root, "", 1)
 
-    return  buf_lines, symbol_to_line, highlights, details
+    get_buf_lines_and_highlights(symbols.root, "", 1)
+    return buf_lines, highlights
 end
 
 ---@param sidebar Sidebar
@@ -1443,30 +1447,60 @@ local function move_cursor_to_symbol(sidebar, symbol)
     vim.api.nvim_win_set_cursor(sidebar.win, { line, 0 })
 end
 
+---@param symbols Symbols
+---@return string[]
+local function sidebar_get_inline_details(symbols)
+    local details = {}
+
+    ---@param symbol Symbol
+    local function get_details(symbol)
+        if symbols.states[symbol].folded then return end
+        for _, child in ipairs(symbol.children) do
+            if symbols.states[child].visible then
+                table.insert(details, child.detail)
+                get_details(child)
+            end
+        end
+    end
+
+    get_details(symbols.root)
+    return details
+end
+
+---@param buf integer
+---@param details string[]
+local function sidebar_add_inline_details(buf, details)
+    for line, detail in ipairs(details) do
+        vim.api.nvim_buf_set_extmark(
+            buf, SIDEBAR_EXT_NS, line-1, -1,
+            {
+                virt_text = { { detail, "Comment" } },
+                virt_text_pos = "eol",
+                hl_mode = "combine",
+            }
+        )
+    end
+end
+
 ---@param sidebar Sidebar
 local function sidebar_refresh_view(sidebar)
-    local buf_lines, symbol_to_line, highlights, details = process_symbols(
-        sidebar_current_symbols(sidebar),
-        sidebar.char_config,
-        sidebar.show_guide_lines
+    local symbols = sidebar_current_symbols(sidebar)
+
+    local buf_lines, highlights = sidebar_get_buf_lines_and_highlights(
+        symbols, sidebar.char_config, sidebar.show_guide_lines
     )
-    sidebar.lines = symbol_to_line
+
+    sidebar.lines = get_line_for_each_symbol(symbols)
+
     buf_set_content(sidebar.buf, buf_lines)
+
     for _, hl in ipairs(highlights) do
         highlight_apply(sidebar.buf, hl)
     end
 
     if sidebar.show_inline_details then
-        for line, detail in ipairs(details) do
-            vim.api.nvim_buf_set_extmark(
-                sidebar.buf, SIDEBAR_EXT_NS, line-1, -1,
-                {
-                    virt_text = { { detail, "Comment" } },
-                    virt_text_pos = "eol",
-                    hl_mode = "combine",
-                }
-            )
-        end
+        local details = sidebar_get_inline_details(symbols)
+        sidebar_add_inline_details(sidebar.buf, details)
     end
 
     sidebar_refresh_size(sidebar, buf_lines)
@@ -1605,15 +1639,15 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_fold(sidebar)
-        local symbol, state = sidebar_current_symbol(sidebar)
-        if symbol.level > 1 and (state.folded or #symbol.children == 0) then
-            symbol = symbol.parent
-            assert(symbol ~= nil)
-        end
-        state.folded = true
-        sidebar_refresh_view(sidebar)
-        move_cursor_to_symbol(sidebar, symbol)
+    local symbol, state = sidebar_current_symbol(sidebar)
+    if symbol.level > 1 and (state.folded or #symbol.children == 0) then
+        symbol = symbol.parent
+        assert(symbol ~= nil)
     end
+    state.folded = true
+    sidebar_refresh_view(sidebar)
+    move_cursor_to_symbol(sidebar, symbol)
+end
 
 ---@param sidebar Sidebar
 local function sidebar_unfold_recursively(sidebar)
