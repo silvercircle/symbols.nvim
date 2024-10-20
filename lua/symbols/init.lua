@@ -220,6 +220,26 @@ local LspProvider = {
     async_get_symbols = function(cache, buf, refresh_symbols, on_fail)
         local got_symbols = false
 
+        ---@param sym1 Symbol
+        ---@param sym2 Symbol
+        ---@return boolean
+        local function comp_range(sym1, sym2)
+            local s1 = sym1.range.start
+            local s2 = sym2.range.start
+            return (
+                s1.line < s2.line
+                or (s1.line == s2.line and s1.character < s2.character)
+            )
+        end
+
+        ---@param symbol Symbol
+        local function sort_symbols(symbol)
+            table.sort(symbol.children, comp_range)
+            for _, child in ipairs(symbol.children) do
+                sort_symbols(child)
+            end
+        end
+
         local function handler(err, result, _, _)
             got_symbols = true
             if err ~= nil then
@@ -229,6 +249,7 @@ local LspProvider = {
             local root = Symbol_root()
             root.children = result
             rec_tidy_lsp_symbol(root, nil, 0)
+            sort_symbols(root)
             refresh_symbols(root)
         end
 
