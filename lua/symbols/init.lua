@@ -492,6 +492,8 @@ end
 ---@field symbol Symbol
 ---@field cursor integer[2]
 ---@field config PreviewConfig
+---@field sidebar_win integer
+---@field sidebar_side "left" | "right"
 
 ---@param preview Preview
 local function preview_close(preview)
@@ -528,6 +530,8 @@ local function _preview_open(preview, params)
     local range = params.symbol.range
     local selection_range = params.symbol.selectionRange
 
+    params.cursor[1] = params.cursor[1] - vim.fn.line("w0", params.sidebar_win) + 1
+
     local height = config.fixed_size_height
     if config.auto_size then
         height = config.auto_size_extra_lines + (range["end"].line - range.start.line) + 1
@@ -542,17 +546,26 @@ local function _preview_open(preview, params)
     width = math.min(max_width, width)
 
     local opts = {
-        relative = "cursor",
-        anchor = "NE",
-        width = width,
         height = height,
-        row = 0,
-        col = -params.cursor[2]-1,
+        width = width,
         border = "single",
         style = "minimal",
-        -- to allow other floating windows (like symbol peek) in front
-        zindex = 45,
+        zindex = 45, -- to allow other floating windows (like symbol peek) in front
     }
+    if params.sidebar_side == "right" then
+        opts.relative = "win"
+        opts.win = params.sidebar_win
+        opts.anchor = "NE"
+        opts.row = params.cursor[1] - 1
+        opts.col = -1
+    else
+        opts.relative = "win"
+        opts.win = params.source_win
+        opts.anchor = "NW"
+        opts.row = params.cursor[1] - 1
+        opts.col = 0
+    end
+
     preview.win = vim.api.nvim_open_win(params.source_buf, false, opts)
     if params.config.show_line_number then
         vim.wo[preview.win].number = true
@@ -663,6 +676,7 @@ end
 
 ---@class DetailsOpenParams
 ---@field sidebar_win integer
+---@field sidebar_side "left" | "right"
 ---@field symbol Symbol
 ---@field symbol_state SymbolState
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
@@ -693,7 +707,6 @@ local function details_open(details, params)
                 .. ")"
             )
         end
-
         -- debug info
         table.insert(text, " [SYMBOL DEBUG INFO]")
         table.insert(text, "   name: " .. symbol.name)
@@ -753,41 +766,29 @@ local function details_open(details, params)
     local height = line_count
 
     local cursor = vim.api.nvim_win_get_cursor(sidebar_win)
-    local row = -2 - height
-    local anchor = "NW"
-    if cursor[1] - 1 + row < 0 then
-        row = -1 * row + 1
-        anchor = "SW"
-    end
+    cursor[1] = cursor[1] - vim.fn.line("w0", sidebar_win) + 1
+
+    local row = cursor[1] - 3 - height
+    if row < 0 then row = cursor[1] end
 
     local col = 0
-    if width + 2 > sidebar_width then
+    if params.sidebar_side == "right" and width + 2 > sidebar_width then
         col = col - (width + 2 - sidebar_width)
     end
 
     local opts = {
-        relative = "cursor",
-        anchor = anchor,
-        width = width,
-        height = height,
+        relative = "win",
+        win = params.sidebar_win,
+        anchor = "NW",
         row = row,
         col = col,
+        width = width,
+        height = height,
         border = "single",
         style = "minimal",
     }
     details.win = vim.api.nvim_open_win(details_buf, false, opts)
     details.sidebar_win = sidebar_win
-
-    if cursor[2] == 0 then
-        details.locked = false
-        details.prev_cursor = nil
-    else
-        -- details.locked = true
-        -- vim.api.nvim_win_set_cursor(sidebar_win, { cursor[1], 0 })
-        -- details.prev_cursor = cursor
-    end
-
-    vim.wo[details.win].wrap = true
 end
 
 ---@param details DetailsWindow
@@ -1156,6 +1157,7 @@ end
 ---@field gs GlobalState
 ---@field deleted boolean
 ---@field win integer
+---@field win_dir "left" | "right"
 ---@field win_settings WinSettings
 ---@field buf integer
 ---@field source_win integer
@@ -1182,6 +1184,7 @@ local function sidebar_new_obj()
         gs = GlobalState_new(),
         deleted = false,
         win = -1,
+        win_dir = "right",
         win_settings = WinSettings_new(),
         buf = -1,
         source_win = -1,
@@ -1369,38 +1372,33 @@ local function sidebar_refresh_size(sidebar, buf_lines)
     end
 end
 
----@param sidebar Sidebar
----@return integer
-local function sidebar_open_bare_win(sidebar)
-
-    ---@param dir string
-    local function open_win(dir)
-        assert(dir == "left" or dir == "right", "invalid dir")
-        local width = sidebar.fixed_width
-        local dir_cmd = (dir == "left" and "leftabove") or "rightbelow"
-        vim.cmd("vertical " .. dir_cmd .. " " .. tostring(width) .. "split")
-    end
-
-    local dir = sidebar.gs.settings.open_direction
+---@param dir OpenDirection
+---@return "left" | "right"
+local function find_split_direction(dir)
     if dir == "left" or dir == "right" then
-        open_win(dir)
-    else
-        -- TODO: ignore floating windows
-        local wins = vim.api.nvim_tabpage_list_wins(0)
-        local curr_win = vim.api.nvim_get_current_win()
-        if dir == "try-left" then
-            local left_ok = wins[1] == curr_win
-            if left_ok then open_win("left") else open_win("right") end
-        elseif dir == "try-right" then
-            local right_ok = wins[#wins] == curr_win
-            if right_ok then open_win("right") else open_win("left") end
-        else
-            assert(false, "invalid dir")
-        end
-
+        return dir
     end
 
-    return vim.api.nvim_get_current_win()
+    -- TODO: ignore floating windows?
+    local wins = vim.api.nvim_tabpage_list_wins(0)
+    local curr_win = vim.api.nvim_get_current_win()
+    if dir == "try-left" then
+        return (wins[1] == curr_win and "left") or "right"
+    elseif dir == "try-right" then
+        return (wins[#wins] == curr_win and "right") or "left"
+    end
+
+    assert(false, "invalid dir")
+end
+
+---@param sidebar Sidebar
+---@return integer, "left" | "right"
+local function sidebar_open_bare_win(sidebar)
+    local dir = find_split_direction(sidebar.gs.settings.open_direction)
+    local width = sidebar.fixed_width
+    local dir_cmd = (dir == "left" and "leftabove") or "rightbelow"
+    vim.cmd("vertical " .. dir_cmd .. " " .. tostring(width) .. "split")
+    return vim.api.nvim_get_current_win(), dir
 end
 
 local function sidebar_open(sidebar)
@@ -1408,7 +1406,7 @@ local function sidebar_open(sidebar)
 
     local original_win = vim.api.nvim_get_current_win()
     vim.api.nvim_set_current_win(sidebar.source_win)
-    sidebar.win = sidebar_open_bare_win(sidebar)
+    sidebar.win, sidebar.win_dir = sidebar_open_bare_win(sidebar)
     vim.api.nvim_set_current_win(original_win)
     vim.api.nvim_win_set_buf(sidebar.win, sidebar.buf)
 
@@ -1751,13 +1749,17 @@ end
 local function _sidebar_preview_open_params(sidebar)
     ---@return PreviewOpenParams
     return function()
-        return {
+        ---@type PreviewOpenParams
+        local obj = {
             source_win = sidebar.source_win,
             source_buf = sidebar_source_win_buf(sidebar),
             cursor = vim.api.nvim_win_get_cursor(sidebar.win),
             symbol = sidebar_current_symbol(sidebar),
             config = sidebar.preview_config,
+            sidebar_win = sidebar.win,
+            sidebar_side = sidebar.win_dir,
         }
+        return obj
     end
 end
 
@@ -1773,6 +1775,7 @@ local function _sidebar_details_open_params(sidebar)
         local symbol, symbol_state = sidebar_current_symbol(sidebar)
         return {
             sidebar_win = sidebar.win,
+            sidebar_side = sidebar.win_dir,
             symbol = symbol,
             symbol_state = symbol_state,
             symbol_display_config = sidebar.symbol_display_config,
@@ -2079,6 +2082,20 @@ local function sidebar_on_cursor_move(sidebar)
 end
 
 ---@param sidebar Sidebar
+local function sidebar_on_scroll(sidebar)
+    if sidebar.details.win ~= -1 then
+        details_close(sidebar.details)
+        local params = _sidebar_details_open_params(sidebar)()
+        details_open(sidebar.details, params)
+    end
+    if sidebar.preview.win ~= -1 then
+        preview_close(sidebar.preview)
+        local params = _sidebar_preview_open_params(sidebar)
+        preview_open(sidebar.preview, params)
+    end
+end
+
+---@param sidebar Sidebar
 ---@param symbols_retriever SymbolsRetriever
 ---@param num integer
 ---@param config SidebarConfig
@@ -2121,6 +2138,14 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
             callback = function() sidebar_on_cursor_move(sidebar) end,
             buffer = sidebar.buf,
             nested = true,
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "WinScrolled" },
+        {
+            callback = function() sidebar_on_scroll(sidebar) end,
+            buffer = sidebar.buf,
         }
     )
 
