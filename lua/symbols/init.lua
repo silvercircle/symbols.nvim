@@ -23,7 +23,9 @@ end
 
 
 ---@type integer
-local LOG_LEVEL = vim.log.levels.ERROR
+local DEFAULT_LOG_LEVEL = vim.log.levels.ERROR
+---@type integer
+local LOG_LEVEL = DEFAULT_LOG_LEVEL
 
 ---@type table<integer, string>
 local LOG_LEVEL_STRING = {
@@ -152,7 +154,7 @@ local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
 
 ---@param buf integer
 ---@param hl Highlight
-local function highlight_apply(buf, hl)
+local function Highlight_apply(buf, hl)
     vim.api.nvim_buf_add_highlight(
         buf, SIDEBAR_HL_NS, hl.group, hl.line-1, hl.col_start, hl.col_end
     )
@@ -164,7 +166,7 @@ end
 
 ---@param point [integer, integer]
 ---@return Pos
-local function to_pos(point)
+local function Pos_from_point(point)
     return { line = point[1] - 1, character = point[2] }
 end
 
@@ -201,6 +203,19 @@ local function Symbol_root()
         },
     }
 end
+
+---@param symbol Symbol
+---@return string[]
+local function Symbol_path(symbol)
+    local path = {}
+    while symbol.level > 0 do
+        path[symbol.level] = symbol.name
+        symbol = symbol.parent
+        assert(symbol ~= nil)
+    end
+    return path
+end
+
 
 ---@alias RefreshSymbolsFun fun(symbols: Symbol, provider_name: string, provider_config: table)
 ---@alias KindToHlGroupFun fun(kind: string): string
@@ -709,7 +724,7 @@ end
 ---@field show_debug_info boolean
 
 ---@return DetailsWindow
-local function details_window_new_obj()
+local function details_new_obj()
     return {
         auto_show = false,
         win = -1,
@@ -718,18 +733,6 @@ local function details_window_new_obj()
         prev_cursor = nil,
         show_debug_info = false
     }
-end
-
----@param symbol Symbol
----@return string[]
-local function symbol_path(symbol)
-    local path = {}
-    while symbol.level > 0 do
-        path[symbol.level] = symbol.name
-        symbol = symbol.parent
-        assert(symbol ~= nil)
-    end
-    return path
 end
 
 ---@class DetailsOpenParams
@@ -792,7 +795,7 @@ local function details_open(details, params)
         })
         display_kind = display_kind .. " "
     end
-    table.insert(text, " " .. display_kind .. table.concat(symbol_path(symbol), "."))
+    table.insert(text, " " .. display_kind .. table.concat(Symbol_path(symbol), "."))
 
     if symbol.detail ~= "" then
         local detail_first_line = #text + 1
@@ -815,7 +818,7 @@ local function details_open(details, params)
     buf_set_content(details_buf, text)
 
     for _, hl in ipairs(highlights) do
-        highlight_apply(details_buf, hl)
+        Highlight_apply(details_buf, hl)
     end
 
     local line_count = vim.api.nvim_buf_line_count(details_buf)
@@ -1253,7 +1256,7 @@ local function sidebar_new_obj()
         lines = {},
         symbol_display_config = {},
         preview = preview_new_obj(),
-        details = details_window_new_obj(),
+        details = details_new_obj(),
         char_config = cfg.default.sidebar.chars,
         show_inline_details = false,
         show_guide_lines = false,
@@ -1713,7 +1716,7 @@ local function sidebar_refresh_view(sidebar)
     buf_set_content(sidebar.buf, buf_lines)
 
     for _, hl in ipairs(highlights) do
-        highlight_apply(sidebar.buf, hl)
+        Highlight_apply(sidebar.buf, hl)
     end
 
     if sidebar.show_inline_details then
@@ -2276,78 +2279,6 @@ local function find_sidebar_for_reuse(sidebars)
     return nil, -1
 end
 
----@param gs GlobalState
----@param sidebars Sidebar[]
----@param config Config
-local function setup_dev(gs, sidebars, config)
-    LOG_LEVEL = config.dev.log_level
-
-    ---@param pkg string
-    local function unload_package(pkg)
-        local esc_pkg = pkg:gsub("([^%w])", "%%%1")
-        for module_name, _ in pairs(package.loaded) do
-            if string.find(module_name, esc_pkg) then
-                package.loaded[module_name] = nil
-            end
-        end
-    end
-
-    local function reload()
-        remove_user_commands()
-        if not pcall(function() vim.api.nvim_del_augroup_by_id(global_autocmd_group) end) then
-            log.warn("Failed to remove autocmd group.")
-        end
-
-        for _, sidebar in ipairs(sidebars) do
-            sidebar_destroy(sidebar)
-        end
-
-        reset_cursor(gs.cursor)
-
-        unload_package("symbols")
-        require("symbols").setup(config)
-
-        log.info("symbols.nvim reloaded")
-    end
-
-    local function debug()
-        show_debug_in_current_window(sidebars)
-    end
-
-    local function show_config()
-        local buf = vim.api.nvim_create_buf(false, true)
-        local text = vim.inspect(config)
-        local lines = vim.split(text, "\n")
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-        local win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(win, buf)
-        buf_modifiable(buf, false)
-    end
-
-    ---@type table<DevAction, fun()>
-    local dev_action_to_fun = {
-        reload = reload,
-        debug = debug,
-        ["show-config"] = show_config,
-    }
-
-    for key, action in pairs(config.dev.keymaps) do
-        vim.keymap.set("n", key, dev_action_to_fun[action])
-    end
-end
-
----@param sidebars Sidebar[]
----@param cursor CursorState
-local function on_win_enter_hide_cursor(sidebars, cursor)
-    local win = vim.api.nvim_get_current_win()
-    for _, sidebar in ipairs(sidebars) do
-        if sidebar.win == win then
-            hide_cursor(cursor)
-            return
-        end
-    end
-end
-
 ---@param sidebar Sidebar
 ---@param target Symbol
 local function sidebar_set_cursor_at_symbol(sidebar, target)
@@ -2412,6 +2343,67 @@ end
 
 ---@param gs GlobalState
 ---@param sidebars Sidebar[]
+---@param config Config
+local function setup_dev(gs, sidebars, config)
+    LOG_LEVEL = config.dev.log_level
+
+    ---@param pkg string
+    local function unload_package(pkg)
+        local esc_pkg = pkg:gsub("([^%w])", "%%%1")
+        for module_name, _ in pairs(package.loaded) do
+            if string.find(module_name, esc_pkg) then
+                package.loaded[module_name] = nil
+            end
+        end
+    end
+
+    local function reload()
+        remove_user_commands()
+        if not pcall(function() vim.api.nvim_del_augroup_by_id(global_autocmd_group) end) then
+            log.warn("Failed to remove autocmd group.")
+        end
+
+        for _, sidebar in ipairs(sidebars) do
+            sidebar_destroy(sidebar)
+        end
+
+        reset_cursor(gs.cursor)
+
+        unload_package("symbols")
+        require("symbols").setup(config)
+
+        log.info("symbols.nvim reloaded")
+    end
+
+    local function debug()
+        show_debug_in_current_window(sidebars)
+    end
+
+    local function show_config()
+        local buf = vim.api.nvim_create_buf(false, true)
+        local text = vim.inspect(config)
+        local lines = vim.split(text, "\n")
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        local win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_buf(win, buf)
+        buf_modifiable(buf, false)
+    end
+
+    ---@type table<DevAction, fun()>
+    local dev_action_to_fun = {
+        reload = reload,
+        debug = debug,
+        ["show-config"] = show_config,
+    }
+
+    for key, action in pairs(config.dev.keymaps) do
+        vim.keymap.set("n", key, dev_action_to_fun[action])
+    end
+
+end
+
+---@param gs GlobalState
+---@param sidebars Sidebar[]
 ---@param symbols_retriever SymbolsRetriever
 ---@param config Config
 local function setup_user_commands(gs, sidebars, symbols_retriever, config)
@@ -2446,24 +2438,6 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
     )
 
     create_user_command(
-        "SymbolsDebugToggle",
-        function()
-            config.dev.enabled = not config.dev.enabled
-            for _, sidebar in ipairs(sidebars) do
-                sidebar.details.show_debug_info = config.dev.enabled
-            end
-            if config.dev.enabled then
-                LOG_LEVEL = config.dev.log_level
-            else
-                LOG_LEVEL = vim.log.levels.ERROR
-            end
-        end,
-        {}
-    )
-
-    create_change_log_level_user_command("SymbolsDebugLevel", "Change the Symbols debug level")
-
-    create_user_command(
         "SymbolsClose",
         function()
             local win = vim.api.nvim_get_current_win()
@@ -2482,13 +2456,27 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             local sidebar = find_sidebar_for_win(sidebars, win)
             if sidebar ~= nil then
                 local symbols = sidebar_current_symbols(sidebar)
-                local pos = to_pos(vim.api.nvim_win_get_cursor(sidebar.source_win))
+                local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
                 local symbol = symbol_at_pos(symbols.root, pos)
                 sidebar_set_cursor_at_symbol(sidebar, symbol)
             end
         end,
         {}
     )
+
+    create_user_command(
+        "SymbolsDebugToggle",
+        function()
+            config.dev.enabled = not config.dev.enabled
+            for _, sidebar in ipairs(sidebars) do
+                sidebar.details.show_debug_info = config.dev.enabled
+            end
+            LOG_LEVEL = (config.dev.enabled and config.dev.log_level) or DEFAULT_LOG_LEVEL
+        end,
+        {}
+    )
+
+    create_change_log_level_user_command("SymbolsDebugLevel", "Change the Symbols debug level")
 end
 
 ---@param gs GlobalState
@@ -2501,7 +2489,13 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
             group = global_autocmd_group,
             callback = function()
                 if gs.cursor.hide then
-                    on_win_enter_hide_cursor(sidebars, gs.cursor)
+                    local win = vim.api.nvim_get_current_win()
+                    for _, sidebar in ipairs(sidebars) do
+                        if sidebar.win == win then
+                            hide_cursor(gs.cursor)
+                            return
+                        end
+                    end
                 end
             end
         }
