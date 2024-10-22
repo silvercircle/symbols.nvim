@@ -2308,6 +2308,7 @@ local function sidebar_set_cursor_at_symbol(sidebar, target)
     ---@param symbol Symbol
     ---@return integer
     local function count_lines(symbol)
+        if not symbols.states[symbol].visible then return 0 end
         local lines = 1
         if not symbols.states[symbol].folded then
             for _, child in ipairs(symbol.children) do
@@ -2325,7 +2326,9 @@ local function sidebar_set_cursor_at_symbol(sidebar, target)
         local found = false
         for _, child in ipairs(current.children) do
             if range_contains(child.range, target.range) then
-                lines = lines + 1
+                if symbols.states[child].visible then
+                    lines = lines + 1
+                end
                 current = child
                 found = true
                 break
