@@ -2,6 +2,26 @@ local cfg = require("symbols.config")
 
 local M = {}
 
+---@type table<string, boolean>
+local cmds = {}
+
+---@param name string
+---@param cmd fun(t: table)
+---@param opts table
+local function create_user_command(name, cmd, opts)
+    cmds[name] = true
+    vim.api.nvim_create_user_command(name, cmd, opts)
+end
+
+local function remove_user_commands()
+    local keys = vim.tbl_keys(cmds)
+    for _, cmd in ipairs(keys) do
+        vim.api.nvim_del_user_command(cmd)
+        cmds[cmd] = nil
+    end
+end
+
+
 ---@type integer
 local LOG_LEVEL = vim.log.levels.ERROR
 
@@ -42,6 +62,46 @@ local log = {
     ---@type LogFun
     trace = function(msg) _log(msg or "", vim.log.levels.TRACE) end,
 }
+
+---@param name string
+---@param desc string
+local function create_change_log_level_user_command(name, desc)
+    local string_to_log_level = {
+        error = vim.log.levels.ERROR,
+        warning = vim.log.levels.WARN,
+        info = vim.log.levels.INFO,
+        debug = vim.log.levels.DEBUG,
+        trace = vim.log.levels.TRACE,
+        off = vim.log.levels.off,
+    }
+    local log_levels = vim.tbl_keys(string_to_log_level)
+
+    create_user_command(
+        name,
+        function(e)
+            local arg = e.fargs[1]
+            local new_log_level = string_to_log_level[arg]
+            if new_log_level == nil then
+                log.error("Invalid log level: " .. arg)
+            else
+                LOG_LEVEL = new_log_level
+            end
+        end,
+        {
+            nargs = 1,
+            complete = function(arg, _)
+                local suggestions = {}
+                for _, log_level in ipairs(log_levels) do
+                    if vim.startswith(log_level, arg) then
+                        table.insert(suggestions, log_level)
+                    end
+                end
+                return suggestions
+            end,
+            desc = desc
+        }
+    )
+end
 
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
@@ -2179,17 +2239,6 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     )
 end
 
-local function create_command(cmds, name, cmd, opts)
-    cmds[name] = true
-    vim.api.nvim_create_user_command(name, cmd, opts)
-end
-
-local function remove_commands(cmds)
-    for _, cmd in ipairs(cmds) do
-        vim.api.nvim_del_user_command(cmd)
-    end
-end
-
 local function show_debug_in_current_window(sidebars)
     local buf = vim.api.nvim_create_buf(false, true)
 
@@ -2227,23 +2276,10 @@ local function find_sidebar_for_reuse(sidebars)
     return nil, -1
 end
 
----@param sidebars Sidebar[]
-local function on_win_close(sidebars, win)
-    for _, sidebar in ipairs(sidebars) do
-        if sidebar.source_win == win then
-            sidebar_destroy(sidebar)
-        elseif sidebar.win == win then
-            sidebar_close(sidebar)
-        end
-    end
-end
-
----@param cmds string[]
----@param autocmd_group string
----@param sidebars Sidebar[]
----@config Config
 ---@param gs GlobalState
-local function setup_dev(cmds, autocmd_group, sidebars, config, gs)
+---@param sidebars Sidebar[]
+---@param config Config
+local function setup_dev(gs, sidebars, config)
     LOG_LEVEL = config.dev.log_level
 
     ---@param pkg string
@@ -2257,16 +2293,19 @@ local function setup_dev(cmds, autocmd_group, sidebars, config, gs)
     end
 
     local function reload()
-        remove_commands(cmds)
-        vim.api.nvim_del_augroup_by_id(autocmd_group)
+        remove_user_commands()
+        if not pcall(function() vim.api.nvim_del_augroup_by_id(global_autocmd_group) end) then
+            log.warn("Failed to remove autocmd group.")
+        end
+
         for _, sidebar in ipairs(sidebars) do
             sidebar_destroy(sidebar)
         end
 
+        reset_cursor(gs.cursor)
+
         unload_package("symbols")
         require("symbols").setup(config)
-
-        reset_cursor(gs.cursor)
 
         log.info("symbols.nvim reloaded")
     end
@@ -2371,10 +2410,178 @@ local function sidebar_set_cursor_at_symbol(sidebar, target)
     vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
 end
 
+---@param gs GlobalState
+---@param sidebars Sidebar[]
+---@param symbols_retriever SymbolsRetriever
+---@param config Config
+local function setup_user_commands(gs, sidebars, symbols_retriever, config)
+    create_user_command(
+        "Symbols",
+        function()
+            local win = vim.api.nvim_get_current_win()
+            for _, sidebar in ipairs(sidebars) do
+                if not sidebar.deleted and sidebar.win == win then
+                    vim.api.nvim_set_current_win(sidebar.source_win)
+                    return
+                end
+            end
+            local sidebar = find_sidebar_for_win(sidebars, win)
+            if sidebar == nil then
+                local num
+                sidebar, num = find_sidebar_for_reuse(sidebars)
+                if sidebar == nil then
+                    sidebar = sidebar_new_obj()
+                    table.insert(sidebars, sidebar)
+                    num = #sidebars
+                end
+                sidebar_new(sidebar, symbols_retriever, num, config.sidebar, gs, config.dev.enabled)
+            end
+            if sidebar.visible then
+                vim.api.nvim_set_current_win(sidebar.win)
+            end
+            sidebar_open(sidebar)
+            sidebar_refresh_symbols(sidebar)
+        end,
+        { desc = "Open the Symbols sidebar" }
+    )
+
+    create_user_command(
+        "SymbolsDebugToggle",
+        function()
+            config.dev.enabled = not config.dev.enabled
+            for _, sidebar in ipairs(sidebars) do
+                sidebar.details.show_debug_info = config.dev.enabled
+            end
+            if config.dev.enabled then
+                LOG_LEVEL = config.dev.log_level
+            else
+                LOG_LEVEL = vim.log.levels.ERROR
+            end
+        end,
+        {}
+    )
+
+    create_change_log_level_user_command("SymbolsDebugLevel", "Change the Symbols debug level")
+
+    create_user_command(
+        "SymbolsClose",
+        function()
+            local win = vim.api.nvim_get_current_win()
+            local sidebar = find_sidebar_for_win(sidebars, win)
+            if sidebar ~= nil then
+                sidebar_close(sidebar)
+            end
+        end,
+        { desc = "Close the Symbols sidebar" }
+    )
+
+    create_user_command(
+        "SymbolsCurrent",
+        function()
+            local win = vim.api.nvim_get_current_win()
+            local sidebar = find_sidebar_for_win(sidebars, win)
+            if sidebar ~= nil then
+                local symbols = sidebar_current_symbols(sidebar)
+                local pos = to_pos(vim.api.nvim_win_get_cursor(sidebar.source_win))
+                local symbol = symbol_at_pos(symbols.root, pos)
+                sidebar_set_cursor_at_symbol(sidebar, symbol)
+            end
+        end,
+        {}
+    )
+end
+
+---@param gs GlobalState
+---@param sidebars Sidebar[]
+---@param symbols_retriever SymbolsRetriever
+local function setup_autocommands(gs, sidebars, symbols_retriever)
+    vim.api.nvim_create_autocmd(
+        { "WinEnter" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                if gs.cursor.hide then
+                    on_win_enter_hide_cursor(sidebars, gs.cursor)
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "WinLeave" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                if gs.cursor.hide or gs.cursor.hidden then
+                    reset_cursor(gs.cursor)
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "WinClosed" },
+        {
+            group = global_autocmd_group,
+            callback = function(t)
+                local win = tonumber(t.match, 10)
+                for _, sidebar in ipairs(sidebars) do
+                    if sidebar.source_win == win then
+                        sidebar_destroy(sidebar)
+                    elseif sidebar.win == win then
+                        sidebar_close(sidebar)
+                    end
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "BufWritePost", "FileChangedShellPost" },
+        {
+            group = global_autocmd_group,
+            callback = function(t)
+                local source_buf = t.buf
+                symbols_retriever.cache[source_buf].fresh = false
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
+        {
+            group = global_autocmd_group,
+            callback = function(t)
+                local source_buf = t.buf
+                for _, sidebar in ipairs(sidebars) do
+                    if sidebar_source_win_buf(sidebar) == source_buf then
+                        sidebar_refresh_symbols(sidebar)
+                    end
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "BufHidden" },
+        {
+            group = global_autocmd_group,
+            callback = function(t)
+                local buf = tonumber(t.buf)
+                for _, sidebar in ipairs(sidebars) do
+                    if sidebar.buf == buf then
+                        sidebar_win_restore(sidebar)
+                        return
+                    end
+                end
+            end
+        }
+    )
+end
+
+---@param config table
 function M.setup(config)
     local _config = cfg.prepare_config(config)
-
-    local cmds = {}
 
     ---@type GlobalState
     local gs = GlobalState_new()
@@ -2393,203 +2600,9 @@ function M.setup(config)
     ---@type Sidebar[]
     local sidebars = {}
 
-    if _config.dev.enabled then
-        setup_dev(cmds, global_autocmd_group, sidebars, _config, gs)
-    end
-
-    create_command(
-        cmds,
-        "Symbols",
-        function()
-            local win = vim.api.nvim_get_current_win()
-            local sidebar = find_sidebar_for_win(sidebars, win)
-            if sidebar == nil then
-                local num
-                sidebar, num = find_sidebar_for_reuse(sidebars)
-                if sidebar == nil then
-                    sidebar = sidebar_new_obj()
-                    table.insert(sidebars, sidebar)
-                    num = #sidebars
-                end
-                sidebar_new(sidebar, symbols_retriever, num, _config.sidebar, gs, _config.dev.enabled)
-            end
-            sidebar_open(sidebar)
-            sidebar_refresh_symbols(sidebar)
-        end,
-        { desc = "" }
-    )
-
-    create_command(
-        cmds,
-        "SymbolsDebugToggle",
-        function()
-            _config.dev.enabled = not _config.dev.enabled
-            for _, sidebar in ipairs(sidebars) do
-                sidebar.details.show_debug_info = _config.dev.enabled
-            end
-            if _config.dev.enabled then
-                LOG_LEVEL = _config.dev.log_level
-            else
-                LOG_LEVEL = vim.log.levels.ERROR
-            end
-        end,
-        {}
-    )
-
-    local string_to_log_level = {
-        error = vim.log.levels.ERROR,
-        warning = vim.log.levels.WARN,
-        info = vim.log.levels.INFO,
-        debug = vim.log.levels.DEBUG,
-        trace = vim.log.levels.TRACE,
-        off = vim.log.levels.off,
-    }
-    local log_levels = vim.tbl_keys(string_to_log_level)
-
-    create_command(
-        cmds,
-        "SymbolsDebugLevel",
-        function(e)
-            local arg = e.fargs[1]
-            local new_log_level = string_to_log_level[arg]
-            if new_log_level == nil then
-                log.error("Invalid log level: " .. arg)
-            else
-                LOG_LEVEL = new_log_level
-            end
-        end,
-        {
-            nargs = 1,
-            complete = function(arg, _)
-                local suggestions = {}
-                for _, log_level in ipairs(log_levels) do
-                    if vim.startswith(log_level, arg) then
-                        table.insert(suggestions, log_level)
-                    end
-                end
-                return suggestions
-            end
-        }
-    )
-
-    create_command(
-        cmds,
-        "SymbolsClose",
-        function()
-            local win = vim.api.nvim_get_current_win()
-            local sidebar = find_sidebar_for_win(sidebars, win)
-            if sidebar ~= nil then
-                sidebar_close(sidebar)
-            end
-        end,
-        { desc = "" }
-    )
-
-    create_command(
-        cmds,
-        "SymbolsCurrent",
-        function()
-            local win = vim.api.nvim_get_current_win()
-            local sidebar = find_sidebar_for_win(sidebars, win)
-            if sidebar ~= nil then
-                local symbols = sidebar_current_symbols(sidebar)
-                local pos = to_pos(vim.api.nvim_win_get_cursor(sidebar.source_win))
-                local symbol = symbol_at_pos(symbols.root, pos)
-                sidebar_set_cursor_at_symbol(sidebar, symbol)
-            end
-        end,
-        {}
-    )
-
-    create_command(
-        cmds,
-        "SymbolsGoTo",
-        function() end,
-        {}
-    )
-
-    vim.api.nvim_create_autocmd(
-        "WinEnter",
-        {
-            group = global_autocmd_group,
-            pattern = "*",
-            callback = function()
-                if gs.cursor.hide then
-                    on_win_enter_hide_cursor(sidebars, gs.cursor)
-                end
-            end
-        }
-    )
-
-    vim.api.nvim_create_autocmd(
-        "WinLeave",
-        {
-            group = global_autocmd_group,
-            pattern = "*",
-            callback = function()
-                if gs.cursor.hide or gs.cursor.hidden then
-                    reset_cursor(gs.cursor)
-                end
-            end
-        }
-    )
-
-    vim.api.nvim_create_autocmd(
-        "WinClosed",
-        {
-            group = global_autocmd_group,
-            pattern = "*",
-            callback = function(t)
-                local win = tonumber(t.match, 10)
-                on_win_close(sidebars, win)
-            end
-        }
-    )
-
-    vim.api.nvim_create_autocmd(
-        { "BufWritePost", "FileChangedShellPost" },
-        {
-            group = global_autocmd_group,
-            pattern = "*",
-            callback = function(t)
-                local source_buf = t.buf
-                symbols_retriever.cache[source_buf].fresh = false
-            end
-        }
-    )
-
-    vim.api.nvim_create_autocmd(
-        { "LspAttach", "BufWinEnter", "BufWritePost", "FileChangedShellPost" },
-        {
-            group = global_autocmd_group,
-            pattern = "*",
-            callback = function(t)
-                local source_buf = t.buf
-                for _, sidebar in ipairs(sidebars) do
-                    if sidebar_source_win_buf(sidebar) == source_buf then
-                        sidebar_refresh_symbols(sidebar)
-                    end
-                end
-            end
-        }
-    )
-
-    vim.api.nvim_create_autocmd(
-        { "BufHidden" },
-        {
-            group = global_autocmd_group,
-            pattern = "*",
-            callback = function(t)
-                local buf = tonumber(t.buf)
-                for _, sidebar in ipairs(sidebars) do
-                    if sidebar.buf == buf then
-                        sidebar_win_restore(sidebar)
-                        return
-                    end
-                end
-            end
-        }
-    )
+    if _config.dev.enabled then setup_dev(gs, sidebars, _config) end
+    setup_user_commands(gs, sidebars, symbols_retriever, _config)
+    setup_autocommands(gs, sidebars, symbols_retriever)
 end
 
 return M

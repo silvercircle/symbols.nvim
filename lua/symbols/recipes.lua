@@ -22,8 +22,8 @@ M.LspKindLuaAscii = {
     Array = { kind = "[]" },
     Boolean = { kind = "boolean" },
     Constant = { kind = "param" },
-    Function = { kind = "function" },
-    Method = { kind = "function" },
+    Function = { kind = "fun" },
+    Method = { kind = "fun" },
     Number = { kind = "number" },
     Object = { kind = "{}" },
     Package = { kind = "" },
@@ -50,7 +50,7 @@ M.LspKindPythonAscii = {
 
 M.LspKindBashAscii = {
     Variable = { kind = "$" },
-    Function = { kind = "function" },
+    Function = { kind = "fun" },
 }
 
 M.LspKindCssAscii = {
@@ -75,14 +75,14 @@ M.MarkdownKindAscii = {
 }
 
 M.LspKindJavascriptAscii = {
-    Function = { kind = "function" },
+    Function = { kind = "fun" },
     Constant = { kind = "const" },
     Variable = { kind = "let" },
     Property = { kind = "" },
 }
 
 M.LspKindTypescriptAscii = {
-    Function = { kind = "function" },
+    Function = { kind = "fun" },
     Constant = { kind = "const" },
     Variable = { kind = "let" },
     Property = { kind = "" },
