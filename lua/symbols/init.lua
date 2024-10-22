@@ -19,24 +19,28 @@ local LOG_LEVEL_STRING = {
 local function _log(msg, level)
     if level >= LOG_LEVEL then
         local date = os.date("%Y/%m/%d %H:%M:%S")
-        local _msg = table.concat({"[", date, "] ", LOG_LEVEL_STRING[level], " ", msg}, "")
+        local fun = ""
+        if level == vim.log.levels.TRACE then
+            fun = "(" .. debug.getinfo(3, "n").name .. ") "
+        end
+        local _msg = table.concat({"[", date, "] ", LOG_LEVEL_STRING[level], " ", fun, msg}, "")
         vim.notify(_msg, level)
     end
 end
 
----@alias LogFun fun(msg: string)
+---@alias LogFun fun(msg: string | nil)
 
 local log = {
     ---@type LogFun
-    error = function(msg) _log(msg, vim.log.levels.ERROR) end,
+    error = function(msg) _log(msg or "", vim.log.levels.ERROR) end,
     ---@type LogFun
-    warn = function(msg) _log(msg, vim.log.levels.WARN) end,
+    warn = function(msg) _log(msg or "", vim.log.levels.WARN) end,
     ---@type LogFun
-    info = function(msg) _log(msg, vim.log.levels.INFO) end,
+    info = function(msg) _log(msg or "", vim.log.levels.INFO) end,
     ---@type LogFun
-    debug = function(msg) _log(msg, vim.log.levels.DEBUG) end,
+    debug = function(msg) _log(msg or "", vim.log.levels.DEBUG) end,
     ---@type LogFun
-    trace = function(msg) _log(msg, vim.log.levels.TRACE) end,
+    trace = function(msg) _log(msg or "", vim.log.levels.TRACE) end,
 }
 
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
@@ -75,12 +79,6 @@ end
 ---@param value any
 local function win_set_option(win, name, value)
     vim.api.nvim_set_option_value(name, value, { win = win })
-end
-
----@param win integer
----@return boolean
-local function is_floating_win(win)
-  return vim.api.nvim_win_get_config(win).relative ~= ""
 end
 
 local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
@@ -302,6 +300,7 @@ local VimdocProvider = {
         local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", tag = "Tag" }
 
         local root = Symbol_root()
+        ---@diagnostic disable-next-line
         root.captureLevel = 0
         local current = root
 
@@ -592,7 +591,6 @@ local function preview_open(preview, get_params)
     if vim.api.nvim_win_is_valid(preview.win) then
         vim.api.nvim_set_current_win(preview.win)
     else
-        preview.locked = true
         local params = get_params()
         _preview_open(preview, params)
     end
@@ -722,6 +720,7 @@ local function details_open(details, params)
     ---@type Highlight[]
     local highlights = {}
 
+    vim.print(params.symbol_display_config)
     local symbol_cfg = params.symbol_display_config[symbol.kind] or {}
     local display_kind = symbol_cfg.kind or ""
     if display_kind ~= "" then
@@ -1376,6 +1375,7 @@ end
 ---@return "left" | "right"
 local function find_split_direction(dir)
     if dir == "left" or dir == "right" then
+        ---@diagnostic disable-next-line
         return dir
     end
 
@@ -1388,6 +1388,7 @@ local function find_split_direction(dir)
         return (wins[#wins] == curr_win and "right") or "left"
     end
 
+    ---@diagnostic disable-next-line
     assert(false, "invalid dir")
 end
 
@@ -1694,6 +1695,8 @@ local function sidebar_refresh_symbols(sidebar)
     end
 
     ---@param new_root Symbol
+    ---@param provider string
+    ---@param provider_config table
     local function _refresh_sidebar(new_root, provider, provider_config)
         local current_symbols = sidebar_current_symbols(sidebar)
         local new_symbols = Symbols_new()
@@ -1741,7 +1744,6 @@ local function sidebar_goto_symbol(sidebar)
         { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
     )
     vim.fn.win_execute(sidebar.source_win, "normal! zz")
-    local r = symbol.range
     flash_highlight(sidebar.source_win, 400, 1)
 end
 
@@ -1772,13 +1774,18 @@ end
 ---@return fun(): DetailsOpenParams
 local function _sidebar_details_open_params(sidebar)
     return function()
+        local symbols = sidebar_current_symbols(sidebar)
         local symbol, symbol_state = sidebar_current_symbol(sidebar)
+        local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(sidebar) })
+        local symbol_display_config = cfg.symbols_display_config(
+            symbols.provider_config, symbols.provider, ft
+        )
         return {
             sidebar_win = sidebar.win,
             sidebar_side = sidebar.win_dir,
             symbol = symbol,
             symbol_state = symbol_state,
-            symbol_display_config = sidebar.symbol_display_config,
+            symbol_display_config = symbol_display_config,
         }
     end
 end
