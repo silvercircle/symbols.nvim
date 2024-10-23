@@ -24,6 +24,7 @@ local M = {}
 ---| "toggle-auto-details"
 ---| "toggle-auto-preview"
 ---| "toggle-cursor-hiding"
+---| "toggle-cursor-follow"
 ---| "help"
 ---| "close"
 
@@ -67,6 +68,7 @@ local M = {}
 
 ---@class SidebarConfig
 ---@field open_direction OpenDirection
+---@field cursor_follow boolean
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field symbol_filter fun(ft: string, symbol: Symbol): boolean
@@ -111,6 +113,7 @@ M.default = {
     hide_cursor = false,
     sidebar = {
         open_direction = "try-left",
+        cursor_follow = true,
         auto_resize = {
             enabled = true,
             min_width = 20,
@@ -160,6 +163,7 @@ M.default = {
             ["tD"] = "toggle-auto-details",
             ["tp"] = "toggle-auto-preview",
             ["tc"] = "toggle-cursor-hiding",
+            ["tf"] = "toggle-cursor-follow",
 
             ["<2-LeftMouse>"] = "toggle-fold",
             ["<RightMouse>"] = "goto-symbol",

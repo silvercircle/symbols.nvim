@@ -1239,6 +1239,7 @@ end
 ---@field fixed_width integer
 ---@field keymaps KeymapsConfig
 ---@field symbol_filter SymbolFilter
+---@field cursor_follow boolean
 
 ---@return Sidebar
 local function sidebar_new_obj()
@@ -2019,6 +2020,11 @@ local function sidebar_toggle_cursor_hiding(sidebar)
     cursor.hide = not cursor.hide
 end
 
+---@param sidebar Sidebar
+local function sidebar_toggle_cursor_follow(sidebar)
+    sidebar.cursor_follow = not sidebar.cursor_follow
+end
+
 local help_options_order = {
     "goto-symbol",
     "preview",
@@ -2036,6 +2042,7 @@ local help_options_order = {
     "toggle-auto-details",
     "toggle-auto-preview",
     "toggle-cursor-hiding",
+    "toggle-cursor-follow",
     "help",
     "close",
 }
@@ -2140,6 +2147,7 @@ local sidebar_actions = {
     ["toggle-auto-details"] = sidebar_toggle_auto_details,
     ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
     ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
+    ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
 
     ["help"] = sidebar_help,
     ["close"] = sidebar_close,
@@ -2166,6 +2174,77 @@ local function sidebar_on_scroll(sidebar)
 end
 
 ---@param sidebar Sidebar
+---@param target Symbol
+---@param unfold boolean
+local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
+    local symbols = sidebar_current_symbols(sidebar)
+
+    ---@param outer_range Range
+    ---@param inner_range Range
+    ---@return boolean
+    local function range_contains(outer_range, inner_range)
+        return (
+            (
+                outer_range.start.line < inner_range.start.line
+                or (
+                    outer_range.start.line == inner_range.start.line
+                    and outer_range.start.character <= inner_range.start.character
+                )
+            ) and (
+                inner_range["end"].line < outer_range["end"].line
+                or (
+                    outer_range["end"].line == inner_range["end"].line
+                    and inner_range["end"].character <= outer_range["end"].character
+                )
+            )
+        )
+    end
+
+    ---@param symbol Symbol
+    ---@return integer
+    local function count_lines(symbol)
+        if not symbols.states[symbol].visible then return 0 end
+        local lines = 1
+        if not symbols.states[symbol].folded then
+            for _, child in ipairs(symbol.children) do
+                lines = lines + count_lines(child)
+            end
+        end
+        return lines
+    end
+
+    local lines = 0
+    local current = symbols.root
+    -- local visible = true
+    while current ~= target do
+        if not symbols.states[current].visible then break end
+        if unfold then
+            symbols.states[current].folded = false
+        else
+            if symbols.states[current].folded then break end
+        end
+        local found = false
+        for _, child in ipairs(current.children) do
+            if range_contains(child.range, target.range) then
+                if symbols.states[child].visible then
+                    lines = lines + 1
+                end
+                current = child
+                found = true
+                break
+            else
+                lines = lines + count_lines(child)
+            end
+        end
+        if not found then break end
+    end
+
+    if lines == 0 then lines = 1 end
+    if unfold then sidebar_refresh_view(sidebar) end
+    vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
+end
+
+---@param sidebar Sidebar
 ---@param symbols_retriever SymbolsRetriever
 ---@param num integer
 ---@param config SidebarConfig
@@ -2187,6 +2266,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.auto_resize = vim.deepcopy(config.auto_resize, true)
     sidebar.fixed_width = config.fixed_width
     sidebar.symbol_filter = config.symbol_filter
+    sidebar.cursor_follow = config.cursor_follow
 
     sidebar.details.show_debug_info = debug
 
@@ -2205,17 +2285,35 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     vim.api.nvim_create_autocmd(
         { "CursorMoved" },
         {
-            callback = function() sidebar_on_cursor_move(sidebar) end,
+            group = global_autocmd_group,
             buffer = sidebar.buf,
+            callback = function() sidebar_on_cursor_move(sidebar) end,
             nested = true,
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "CursorMoved" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                if not sidebar.cursor_follow then return end
+                local win = vim.api.nvim_get_current_win()
+                if win ~= sidebar.source_win then return end
+                local symbols = sidebar_current_symbols(sidebar)
+                local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
+                local symbol = symbol_at_pos(symbols.root, pos)
+                sidebar_set_cursor_at_symbol(sidebar, symbol, false)
+            end
         }
     )
 
     vim.api.nvim_create_autocmd(
         { "WinScrolled" },
         {
-            callback = function() sidebar_on_scroll(sidebar) end,
+            group = global_autocmd_group,
             buffer = sidebar.buf,
+            callback = function() sidebar_on_scroll(sidebar) end,
         }
     )
 
@@ -2279,70 +2377,6 @@ local function find_sidebar_for_reuse(sidebars)
     return nil, -1
 end
 
----@param sidebar Sidebar
----@param target Symbol
-local function sidebar_set_cursor_at_symbol(sidebar, target)
-    local symbols = sidebar_current_symbols(sidebar)
-
-    ---@param outer_range Range
-    ---@param inner_range Range
-    ---@return boolean
-    local function range_contains(outer_range, inner_range)
-        return (
-            (
-                outer_range.start.line < inner_range.start.line
-                or (
-                    outer_range.start.line == inner_range.start.line
-                    and outer_range.start.character <= inner_range.start.character
-                )
-            ) and (
-                inner_range["end"].line < outer_range["end"].line
-                or (
-                    outer_range["end"].line == inner_range["end"].line
-                    and inner_range["end"].character <= outer_range["end"].character
-                )
-            )
-        )
-    end
-
-    ---@param symbol Symbol
-    ---@return integer
-    local function count_lines(symbol)
-        if not symbols.states[symbol].visible then return 0 end
-        local lines = 1
-        if not symbols.states[symbol].folded then
-            for _, child in ipairs(symbol.children) do
-                lines = lines + count_lines(child)
-            end
-        end
-        return lines
-    end
-
-    if target.level == 0 then return end
-    local lines = 0
-    local current = symbols.root
-    while current ~= target do
-        symbols.states[current].folded = false
-        local found = false
-        for _, child in ipairs(current.children) do
-            if range_contains(child.range, target.range) then
-                if symbols.states[child].visible then
-                    lines = lines + 1
-                end
-                current = child
-                found = true
-                break
-            else
-                lines = lines + count_lines(child)
-            end
-        end
-        if not found then break end
-    end
-
-    if lines == 0 then lines = 1 end
-    sidebar_refresh_view(sidebar)
-    vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
-end
 
 ---@param gs GlobalState
 ---@param sidebars Sidebar[]
@@ -2461,7 +2495,7 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
                 local symbols = sidebar_current_symbols(sidebar)
                 local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
                 local symbol = symbol_at_pos(symbols.root, pos)
-                sidebar_set_cursor_at_symbol(sidebar, symbol)
+                sidebar_set_cursor_at_symbol(sidebar, symbol, true)
             end
         end,
         {}
