@@ -1064,14 +1064,17 @@ end
 ---@param retriever SymbolsRetriever
 ---@param buf integer
 ---@param on_retrieve fun(symbol: Symbol, provider_name: string, provider_config: table)
-local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
+---@param on_fail fun(provider_name: string)
+---@return boolean
+local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
     ---@param provider Provider
-    local function on_fail(provider)
+    local function _on_fail(provider)
         return function()
             local entry = retriever.cache[buf]
             entry.update_in_progress = false
             entry.post_update_callbacks = {}
-            log.error(provider.name .. " failed")
+            log.debug(provider.name .. " failed")
+            on_fail(provider.name)
         end
     end
 
@@ -1105,13 +1108,13 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
     if entry.fresh then
         table.insert(entry.post_update_callbacks, on_retrieve)
         _on_retrieve(entry.provider_name, true)(entry.root)
-        return
+        return true
     end
 
     if entry.update_in_progress then
         -- TODO: do not add multiple callbacks for the same sidebar
         table.insert(entry.post_update_callbacks, on_retrieve)
-        return
+        return true
     end
 
     for _, provider in ipairs(retriever.providers) do
@@ -1127,21 +1130,22 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve)
                     cache,
                     buf,
                     _on_retrieve(provider.name, false),
-                    on_fail(provider)
+                    _on_fail(provider)
                 )
             else
                 local ok, symbol = provider.get_symbols(cache, buf)
                 if not ok then
-                    on_fail(provider)()
+                    _on_fail(provider)()
                 else
                     assert(symbol ~= nil)
                     _on_retrieve(provider.name, false)(symbol)
                 end
             end
             entry.update_in_progress = true
-            return
+            return true
         end
     end
+    return false
 end
 
 ---@class WinSettings
@@ -1775,8 +1779,26 @@ local function sidebar_refresh_symbols(sidebar)
         sidebar_refresh_view(sidebar)
     end
 
+    ---@param provider_name string
+    local function on_fail(provider_name)
+        local lines = { "", " [symbols.nvim]", "", " " .. provider_name .. " provider failed" }
+        buf_set_content(sidebar.buf, lines)
+        sidebar_refresh_size(sidebar, lines)
+    end
+
     local buf = sidebar_source_win_buf(sidebar)
-    SymbolsRetriever_retrieve(sidebar.symbols_retriever, buf, _refresh_sidebar)
+    local ok = SymbolsRetriever_retrieve(sidebar.symbols_retriever, buf, _refresh_sidebar, on_fail)
+    if not ok then
+        local ft = vim.bo[sidebar_source_win_buf(sidebar)].ft
+        local lines
+        if ft == "" then
+            lines = { "", " [symbols.nvim]", "", " no filetype detected" }
+        else
+            lines = { "", " [symbols.nvim]", "", " no provider supporting", " " .. ft .. " found" }
+        end
+        buf_set_content(sidebar.buf, lines)
+        sidebar_refresh_size(sidebar, lines)
+    end
 end
 
 ---@param symbols Symbols
@@ -2297,7 +2319,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             callback = function()
-                if not sidebar.cursor_follow then return end
+                if not sidebar.cursor_follow or not sidebar.visible then return end
                 local win = vim.api.nvim_get_current_win()
                 if win ~= sidebar.source_win then return end
                 local symbols = sidebar_current_symbols(sidebar)
