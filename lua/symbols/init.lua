@@ -1117,6 +1117,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
         return true
     end
 
+    log.trace("Attempting to retrieve symbols")
     for _, provider in ipairs(retriever.providers) do
         local cache = {}
         if provider.init ~= nil then
@@ -1734,6 +1735,13 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_refresh_symbols(sidebar)
+    if not sidebar.visible then
+        log.trace("Skipping")
+        return
+    else
+        log.trace("Refreshing")
+    end
+
     ---@return Symbol?
     local function _find_symbol_with_name(symbol, name)
         for _, sym in ipairs(symbol.children) do
