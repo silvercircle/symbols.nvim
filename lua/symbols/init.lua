@@ -2,6 +2,8 @@ local cfg = require("symbols.config")
 
 local M = {}
 
+local MAX_INT = 2147483647
+
 ---@type table<string, boolean>
 local cmds = {}
 
@@ -1812,21 +1814,25 @@ end
 ---@param symbols Symbols
 ---@param start_symbol Symbol
 ---@param value boolean
+---@param depth_limit integer
 ---@return integer
-local function symbol_change_folded_rec(symbols, start_symbol, value)
+local function symbol_change_folded_rec(symbols, start_symbol, value, depth_limit)
 
     ---@param symbol Symbol
-    local function _change_folded_rec(symbol)
+    ---@param dl integer
+    ---@return integer
+    local function _change_folded_rec(symbol, dl)
+        if dl <= 0 then return 0 end
         local symbol_state = symbols.states[symbol]
         local changes = (symbol_state.folded ~= value and #symbol.children > 0 and 1) or 0
         symbol_state.folded = value
         for _, sym in ipairs(symbol.children) do
-            changes = changes + _change_folded_rec(sym)
+            changes = changes + _change_folded_rec(sym, dl-1)
         end
         return changes
     end
 
-    return _change_folded_rec(start_symbol)
+    return _change_folded_rec(start_symbol, depth_limit)
 end
 
 ---@param sidebar Sidebar
@@ -2046,7 +2052,7 @@ end
 local function sidebar_unfold_recursively(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
     local symbol, _ = sidebar_current_symbol(sidebar)
-    symbol_change_folded_rec(symbols, symbol, false)
+    symbol_change_folded_rec(symbols, symbol, false, MAX_INT)
     sidebar_refresh_view(sidebar)
 end
 
@@ -2054,33 +2060,16 @@ end
 local function sidebar_fold_recursively(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
-    local changes = symbol_change_folded_rec(symbols, symbol, true)
+    local changes = symbol_change_folded_rec(symbols, symbol, true, MAX_INT)
     if changes == 0 then
         while(symbol.level > 1) do
             symbol = symbol.parent
             assert(symbol ~= nil)
         end
-        symbol_change_folded_rec(symbols, symbol, true)
+        symbol_change_folded_rec(symbols, symbol, true, MAX_INT)
     end
     sidebar_refresh_view(sidebar)
     move_cursor_to_symbol(sidebar, symbol)
-end
-
-
----@param symbols Symbols
----@param level integer
----@param value boolean
-local function _change_fold_at_level(symbols, level, value)
-    local function change_fold(symbol)
-        local state = symbols.states[symbol]
-        if symbol.level == level then state.folded = value end
-        if symbol.level >= level then return end
-        for _, sym in ipairs(symbol.children) do
-            change_fold(sym)
-        end
-    end
-
-    change_fold(symbols.root)
 end
 
 ---@param sidebar Sidebar
@@ -2091,13 +2080,11 @@ local function sidebar_unfold_one_level(sidebar)
     ---@param symbol Symbol
     ---@return integer
     local function find_level_to_unfold(symbol)
-        local MAX_LEVEL = 100000
-
         if symbol.level ~= 0 and symbols.states[symbol].folded then
             return symbol.level
         end
 
-        local min_level = MAX_LEVEL
+        local min_level = MAX_INT
         for _, sym in ipairs(symbol.children) do
             min_level = math.min(min_level, find_level_to_unfold(sym))
         end
@@ -2106,7 +2093,8 @@ local function sidebar_unfold_one_level(sidebar)
     end
 
     local level = find_level_to_unfold(symbols.root)
-    _change_fold_at_level(symbols, level, false)
+    local count = math.max(vim.v.count, 1)
+    symbol_change_folded_rec(symbols, symbols.root, false, level + count)
     sidebar_refresh_view(sidebar)
 end
 
@@ -2126,22 +2114,41 @@ local function sidebar_fold_one_level(sidebar)
         return max_level
     end
 
+    ---@param symbols Symbols
+    ---@param level integer
+    ---@param value boolean
+    local function _change_fold_at_level(symbols, level, value)
+        local function change_fold(symbol)
+            local state = symbols.states[symbol]
+            if symbol.level == level then state.folded = value end
+            if symbol.level >= level then return end
+            for _, sym in ipairs(symbol.children) do
+                change_fold(sym)
+            end
+        end
+
+        change_fold(symbols.root)
+    end
+
     local level = find_level_to_fold(symbols.root)
-    _change_fold_at_level(symbols, level, true)
+    local count = math.max(vim.v.count, 1)
+    for i=1,math.min(level, count) do
+        _change_fold_at_level(symbols, level - i + 1, true)
+    end
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_unfold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, symbols.root, false)
+    symbol_change_folded_rec(symbols, symbols.root, false, MAX_INT)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, symbols.root, true)
+    symbol_change_folded_rec(symbols, symbols.root, true, MAX_INT)
     symbols.states[symbols.root].folded = false
     sidebar_refresh_view(sidebar)
 end
