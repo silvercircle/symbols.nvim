@@ -1830,6 +1830,78 @@ local function symbol_change_folded_rec(symbols, start_symbol, value)
 end
 
 ---@param sidebar Sidebar
+---@param target Symbol
+---@param unfold boolean
+local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
+    local symbols = sidebar_current_symbols(sidebar)
+
+    ---@param outer_range Range
+    ---@param inner_range Range
+    ---@return boolean
+    local function range_contains(outer_range, inner_range)
+        return (
+            (
+                outer_range.start.line < inner_range.start.line
+                or (
+                    outer_range.start.line == inner_range.start.line
+                    and outer_range.start.character <= inner_range.start.character
+                )
+            ) and (
+                inner_range["end"].line < outer_range["end"].line
+                or (
+                    outer_range["end"].line == inner_range["end"].line
+                    and inner_range["end"].character <= outer_range["end"].character
+                )
+            )
+        )
+    end
+
+    ---@param symbol Symbol
+    ---@return integer
+    local function count_lines(symbol)
+        if not symbols.states[symbol].visible then return 0 end
+        local lines = 1
+        if not symbols.states[symbol].folded then
+            for _, child in ipairs(symbol.children) do
+                lines = lines + count_lines(child)
+            end
+        end
+        return lines
+    end
+
+    local lines = 0
+    local current = symbols.root
+    -- local visible = true
+    while current ~= target do
+        if not symbols.states[current].visible then break end
+        if unfold then
+            symbols.states[current].folded = false
+        else
+            if symbols.states[current].folded then break end
+        end
+        local found = false
+        for _, child in ipairs(current.children) do
+            if range_contains(child.range, target.range) then
+                if symbols.states[child].visible then
+                    lines = lines + 1
+                end
+                current = child
+                found = true
+                break
+            else
+                lines = lines + count_lines(child)
+            end
+        end
+        if not found then break end
+    end
+
+    if lines == 0 then lines = 1 end
+    if unfold then sidebar_refresh_view(sidebar) end
+    vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
+end
+
+
+---@param sidebar Sidebar
 local function sidebar_goto_symbol(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
     vim.api.nvim_set_current_win(sidebar.source_win)
@@ -1885,12 +1957,70 @@ local function _sidebar_details_open_params(sidebar)
 end
 
 ---@param sidebar Sidebar
+local function sidebar_peek(sidebar)
+    sidebar_goto_symbol(sidebar)
+    vim.api.nvim_set_current_win(sidebar.win)
+end
+
+---@param sidebar Sidebar
+local function sidebar_show_symbol_under_cursor(sidebar)
+    local symbols = sidebar_current_symbols(sidebar)
+    local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
+    local symbol = symbol_at_pos(symbols.root, pos)
+    sidebar_set_cursor_at_symbol(sidebar, symbol, true)
+end
+
+---@param sidebar Sidebar
 local function sidebar_toggle_show_details(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.details.win) then
         details_close(sidebar.details)
     else
         details_open(sidebar.details, _sidebar_details_open_params(sidebar)())
     end
+end
+
+---@param sidebar Sidebar
+local function sidebar_goto_parent(sidebar)
+    local symbol, _ = sidebar_current_symbol(sidebar)
+    local count = math.max(vim.v.count, 1)
+    while count > 0 and symbol.level > 1 do
+        symbol = symbol.parent
+        assert(symbol ~= nil)
+        count = count - 1
+    end
+    sidebar_set_cursor_at_symbol(sidebar, symbol, false)
+end
+
+---@param list Symbol[]
+---@param symbol Symbol
+---@return integer
+local function find_symbol_in_list(list, symbol)
+    local i = -1
+    for child_i, child in ipairs(list) do
+        i = child_i
+        if child == symbol then break end
+    end
+    return i
+end
+
+---@param sidebar Sidebar
+local function sidebar_prev_symbol_at_level(sidebar)
+    local symbol, _ = sidebar_current_symbol(sidebar)
+    local symbol_idx = find_symbol_in_list(symbol.parent.children, symbol)
+    assert(symbol_idx ~= -1, "symbol not found")
+    local count = math.max(vim.v.count, 1)
+    local new_idx = math.max(symbol_idx - count, 1)
+    sidebar_set_cursor_at_symbol(sidebar, symbol.parent.children[new_idx], false)
+end
+
+---@param sidebar Sidebar
+local function sidebar_next_symbol_at_level(sidebar)
+    local symbol, _ = sidebar_current_symbol(sidebar)
+    local symbol_idx = find_symbol_in_list(symbol.parent.children, symbol)
+    assert(symbol_idx ~= -1, "symbol not found")
+    local count = math.max(vim.v.count, 1)
+    local new_idx = math.min(symbol_idx + count, #symbol.parent.children)
+    sidebar_set_cursor_at_symbol(sidebar, symbol.parent.children[new_idx], false)
 end
 
 ---@param sidebar Sidebar
@@ -2057,8 +2187,14 @@ end
 
 local help_options_order = {
     "goto-symbol",
+    "peek",
     "preview",
     "toggle-show-details",
+    "prev-symbol",
+    "next-symbol",
+    "prev-symbol-up",
+    "next-symbol-up",
+    "show-symbol-under-cursor",
     "toggle-fold",
     "unfold",
     "fold",
@@ -2159,8 +2295,15 @@ end
 ---@type table<SidebarAction, fun(sidebar: Sidebar)>
 local sidebar_actions = {
     ["goto-symbol"] = sidebar_goto_symbol,
+    ["peek"] = sidebar_peek,
+
     ["preview"] = sidebar_preview_open,
     ["toggle-show-details"] = sidebar_toggle_show_details,
+    ["show-symbol-under-cursor"] = sidebar_show_symbol_under_cursor,
+
+    ["parent"] = sidebar_goto_parent,
+    ["prev-symbol-at-level"] = sidebar_prev_symbol_at_level,
+    ["next-symbol-at-level"] = sidebar_next_symbol_at_level,
 
     ["unfold"] = sidebar_unfold,
     ["unfold-recursively"] = sidebar_unfold_recursively,
@@ -2201,77 +2344,6 @@ local function sidebar_on_scroll(sidebar)
         local params = _sidebar_preview_open_params(sidebar)
         preview_open(sidebar.preview, params)
     end
-end
-
----@param sidebar Sidebar
----@param target Symbol
----@param unfold boolean
-local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
-    local symbols = sidebar_current_symbols(sidebar)
-
-    ---@param outer_range Range
-    ---@param inner_range Range
-    ---@return boolean
-    local function range_contains(outer_range, inner_range)
-        return (
-            (
-                outer_range.start.line < inner_range.start.line
-                or (
-                    outer_range.start.line == inner_range.start.line
-                    and outer_range.start.character <= inner_range.start.character
-                )
-            ) and (
-                inner_range["end"].line < outer_range["end"].line
-                or (
-                    outer_range["end"].line == inner_range["end"].line
-                    and inner_range["end"].character <= outer_range["end"].character
-                )
-            )
-        )
-    end
-
-    ---@param symbol Symbol
-    ---@return integer
-    local function count_lines(symbol)
-        if not symbols.states[symbol].visible then return 0 end
-        local lines = 1
-        if not symbols.states[symbol].folded then
-            for _, child in ipairs(symbol.children) do
-                lines = lines + count_lines(child)
-            end
-        end
-        return lines
-    end
-
-    local lines = 0
-    local current = symbols.root
-    -- local visible = true
-    while current ~= target do
-        if not symbols.states[current].visible then break end
-        if unfold then
-            symbols.states[current].folded = false
-        else
-            if symbols.states[current].folded then break end
-        end
-        local found = false
-        for _, child in ipairs(current.children) do
-            if range_contains(child.range, target.range) then
-                if symbols.states[child].visible then
-                    lines = lines + 1
-                end
-                current = child
-                found = true
-                break
-            else
-                lines = lines + count_lines(child)
-            end
-        end
-        if not found then break end
-    end
-
-    if lines == 0 then lines = 1 end
-    if unfold then sidebar_refresh_view(sidebar) end
-    vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
 end
 
 ---@param sidebar Sidebar
@@ -2543,7 +2615,7 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
         {}
     )
 
-    create_change_log_level_user_command("SymbolsDebugLevel", "Change the Symbols debug level")
+    create_change_log_level_user_command("SymbolsLogLevel", "Change the Symbols debug level")
 end
 
 ---@param gs GlobalState

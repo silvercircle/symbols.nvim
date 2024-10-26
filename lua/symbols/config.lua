@@ -10,6 +10,11 @@ local M = {}
 ---@alias SidebarAction
 ---| "goto-symbol"
 ---| "preview"
+---| "peek"
+---| "parent",
+---| "next-symbol-at-level",
+---| "prev-symbol-at-level",
+---| "show-symbol-under-cursor"
 ---| "toggle-show-details"
 ---| "toggle-fold"
 ---| "unfold"
@@ -146,16 +151,27 @@ M.default = {
         },
         keymaps = {
             ["<CR>"] = "goto-symbol",
+            ["o"] = "peek",
+
             ["K"] = "preview",
             ["d"] = "toggle-show-details",
+            ["gs"] = "show-symbol-under-cursor",
+
+            ["gp"] = "parent",
+            ["["] = "prev-symbol-at-level",
+            ["]"] = "next-symbol-at-level",
 
             ["l"] = "unfold",
+            ["zo"] = "unfold",
             ["L"] = "unfold-recursively",
+            ["zO"] = "unfold-recursively",
             ["zr"] = "unfold-one-level",
             ["zR"] = "unfold-all",
 
             ["h"] = "fold",
+            ["zc"] = "fold",
             ["H"] = "fold-recursively",
+            ["zC"] = "fold-recursively",
             ["zm"] = "fold-one-level",
             ["zM"] = "fold-all",
 
@@ -170,6 +186,7 @@ M.default = {
 
             ["q"] = "close",
             ["?"] = "help",
+            ["g?"] = "help",
         },
     },
     providers = {
