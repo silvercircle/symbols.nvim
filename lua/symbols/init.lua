@@ -1258,7 +1258,6 @@ local function sidebar_new_obj()
         win_settings = WinSettings_new(),
         buf = -1,
         source_win = -1,
-        visible = false,
         symbols_cache = SymbolsCache_new(),
         buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
@@ -1274,6 +1273,11 @@ local function sidebar_new_obj()
         keymaps = cfg.default.sidebar.keymaps,
         symbol_state = {},
     }
+end
+
+---@param sidebar Sidebar
+local function sidebar_visible(sidebar)
+    return sidebar.win ~= -1
 end
 
 ---@param sidebar Sidebar
@@ -1391,7 +1395,7 @@ local function sidebar_str(sidebar)
     local lines = {
         "Sidebar(",
         "  deleted: " .. tostring(sidebar.deleted),
-        "  visible: " .. tostring(sidebar.visible),
+        "  visible: " .. tostring(sidebar_visible(sidebar)),
         "  tab: " .. tostring(tab),
         "  win: " .. tostring(sidebar.win),
         "  buf: " .. tostring(sidebar.buf) .. buf_name,
@@ -1421,7 +1425,7 @@ end
 ---@param sidebar Sidebar
 ---@param buf_lines string[] | nil
 local function sidebar_refresh_size(sidebar, buf_lines)
-    if sidebar.visible then
+    if sidebar_visible(sidebar) then
         if buf_lines == nil then
             buf_lines = vim.api.nvim_buf_get_lines(sidebar.buf, 0, -1, false)
         end
@@ -1474,7 +1478,7 @@ local function sidebar_open_bare_win(sidebar)
 end
 
 local function sidebar_open(sidebar)
-    if sidebar.visible then return end
+    if sidebar_visible(sidebar) then return end
 
     local original_win = vim.api.nvim_get_current_win()
     vim.api.nvim_set_current_win(sidebar.source_win)
@@ -1495,7 +1499,6 @@ local function sidebar_open(sidebar)
         }
     )
 
-    sidebar.visible = true
     sidebar_refresh_size(sidebar, nil)
     vim.cmd("wincmd =")
 end
@@ -1512,18 +1515,16 @@ local function sidebar_win_restore(sidebar)
     details_close(sidebar.details)
     WinSettings_apply(sidebar.win, sidebar.win_settings)
     reset_cursor(sidebar.gs.cursor)
-    sidebar.visible = false
     sidebar.win = -1
     vim.cmd("wincmd =")
 end
 
 local function sidebar_close(sidebar)
-    if not sidebar.visible then return end
+    if not sidebar_visible(sidebar) then return end
     sidebar_preview_close(sidebar)
     details_close(sidebar.details)
     vim.api.nvim_win_close(sidebar.win, true)
     sidebar.win = -1
-    sidebar.visible = false
 end
 
 ---@param sidebar Sidebar
@@ -1737,7 +1738,7 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_refresh_symbols(sidebar)
-    if not sidebar.visible then
+    if not sidebar_visible(sidebar) then
         log.trace("Skipping")
         return
     else
@@ -1877,7 +1878,6 @@ local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
 
     local lines = 0
     local current = symbols.root
-    -- local visible = true
     while current ~= target do
         if not symbols.states[current].visible then break end
         if unfold then
@@ -2406,7 +2406,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             callback = function()
-                if not sidebar.cursor_follow or not sidebar.visible then return end
+                if not sidebar.cursor_follow or not sidebar_visible(sidebar) then return end
                 local win = vim.api.nvim_get_current_win()
                 if win ~= sidebar.source_win then return end
                 local symbols = sidebar_current_symbols(sidebar)
@@ -2574,7 +2574,7 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
                 end
                 sidebar_new(sidebar, symbols_retriever, num, config.sidebar, gs, config.dev.enabled)
             end
-            if sidebar.visible then
+            if sidebar_visible(sidebar) then
                 vim.api.nvim_set_current_win(sidebar.win)
             end
             sidebar_open(sidebar)
