@@ -59,19 +59,19 @@ M.LspKindCssAscii = {
 }
 
 M.VimdocKindAscii = {
-    H1 = { kind = "#" },
-    H2 = { kind = "##" },
-    H3 = { kind = "###" },
+    H1 = { kind = "" },
+    H2 = { kind = "" },
+    H3 = { kind = "" },
     Tag = { kind = "*" },
 }
 
 M.MarkdownKindAscii = {
-    H1 = { kind = "#" },
-    H2 = { kind = "##" },
-    H3 = { kind = "###" },
-    H4 = { kind = "####" },
-    H5 = { kind = "#####" },
-    H6 = { kind = "######" },
+    H1 = { kind = "" },
+    H2 = { kind = "" },
+    H3 = { kind = "" },
+    H4 = { kind = "" },
+    H5 = { kind = "" },
+    H6 = { kind = "" },
 }
 
 M.LspKindJavascriptAscii = {
@@ -104,8 +104,11 @@ M.AsciiSymbols = {
                 default = { symbol_display = {} },
             }
         },
-        vimdoc = { filetype = { default = { symbol_display = M.VimdocKindAscii } } },
-        markdown = { filetype = { default = { symbol_display = M.MarkdownKindAscii } } },
+        treesitter = { filetype = {
+            help = { symbol_display = M.VimdocKindAscii },
+            markdown = { symbol_display = M.MarkdownKindAscii },
+            default = { symbol_display = {} }
+        }},
     }
 }
 
@@ -147,20 +150,23 @@ M.FancySymbols = {
                 }
             }
         },
-        vimdoc = { filetype = { default = { symbol_display = {
-            H1 = { kind = "#" },
-            H2 = { kind = "##" },
-            H3 = { kind = "###" },
-            Tag = { kind = "*" },
-        }}}},
-        markdown = { filetype = { default = { symbol_display = {
-            H1 = { kind = "#" },
-            H2 = { kind = "##" },
-            H3 = { kind = "###" },
-            H4 = { kind = "####" },
-            H5 = { kind = "#####" },
-            H6 = { kind = "######" },
-        }}}},
+        treesitter = { filetype = {
+            help = {
+                H1 = { kind = "" },
+                H2 = { kind = "" },
+                H3 = { kind = "" },
+                Tag = { kind = "*" },
+            },
+            markdown = {
+                H1 = { kind = "" },
+                H2 = { kind = "" },
+                H3 = { kind = "" },
+                H4 = { kind = "" },
+                H5 = { kind = "" },
+                H6 = { kind = "" },
+            },
+            default = { symbol_display = { }
+        }}},
     }
 }
 

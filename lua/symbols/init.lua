@@ -222,13 +222,14 @@ end
 ---@alias RefreshSymbolsFun fun(symbols: Symbol, provider_name: string, provider_config: table)
 ---@alias KindToHlGroupFun fun(kind: string): string
 ---@alias KindToDisplayFun fun(kind: string): string
+---@alias ProviderGetSymbols fun(cache: any, buf: integer): boolean, Symbol?
 
 ---@class Provider
 ---@field name string
 ---@field init (fun(cache: table, config: table)) | nil
 ---@field supports fun(cache: table, buf: integer): boolean
 ---@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: fun(root: Symbol), on_fail: fun())) | nil
----@field get_symbols (fun(cache: any, buf: integer): boolean, Symbol?) | nil
+---@field get_symbols ProviderGetSymbols | nil
 
 ---@enum LspSymbolKind
 local LspSymbolKind = {
@@ -344,202 +345,151 @@ local LspProvider = {
     get_symbols = nil,
 }
 
----@type Provider
-local VimdocProvider = {
-    name = "vimdoc",
-    supports = function(cache, buf)
-        local val = vim.api.nvim_get_option_value("ft", { buf = buf })
-        if val ~= "help" then
-            return false
-        end
-        local ok, parser = pcall(vim.treesitter.get_parser, buf, "vimdoc")
-        if not ok then
-            return false
-        end
-        cache.parser = parser
-        return true
-    end,
-    async_get_symbols = nil,
-    get_symbols = function(cache, _)
-        local rootNode = cache.parser:parse()[1]:root()
-
-        local queryString = [[
-            [
-                (h1 (heading) @h1)
-                (h2 (heading) @h2)
-                (h3 (heading) @h3)
-                (tag text: (word) @tag)
-            ]
-        ]]
-        local query = vim.treesitter.query.parse("vimdoc", queryString)
-
-        local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3, tag = 4 }
-        local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", tag = "Tag" }
-
-        local root = Symbol_root()
-        ---@diagnostic disable-next-line
-        root.captureLevel = 0
-        local current = root
-
-        local function update_range_end(node, rangeEnd)
-            if node.range ~= nil and node.captureLevel <= 3 then
-                node.range["end"].line = rangeEnd
-                node.selectionRange = node.range
-            end
-        end
-
-        for id, node, _, _ in query:iter_captures(rootNode, 0) do
-            local capture = query.captures[id]
-            local captureLevel = captureLevelMap[capture]
-
-            local row1, col1, row2, col2 = node:range()
-            local captureString = vim.api.nvim_buf_get_text(0, row1, col1, row2, col2, {})[1]
-
-            local prevHeadingsRangeEnd = row1 - 1
-            local rangeStart = row1
-            if captureLevel <= 2 then
-                prevHeadingsRangeEnd = prevHeadingsRangeEnd - 1
-                rangeStart = rangeStart - 1
-            end
-
-            while captureLevel <= current.captureLevel do
-                update_range_end(current, prevHeadingsRangeEnd)
+---@type ProviderGetSymbols
+local function vimdoc_get_symbols(cache, buf)
+    local rootNode = cache.parser:parse()[1]:root()
+    local queryString = [[
+        [
+            (h1 (heading) @H1)
+            (h2 (heading) @H2)
+            (h3 (heading) @H3)
+            (tag text: (word) @Tag)
+        ]
+    ]]
+    local query = vim.treesitter.query.parse("vimdoc", queryString)
+    local kind_to_capture_level = { root = 0, H1 = 1, H2 = 2, H3 = 3, Tag = 4 }
+    local root = Symbol_root()
+    local current = root
+    for id, node, _, _ in query:iter_captures(rootNode, 0) do
+        local kind = query.captures[id]
+        local row1, col1, row2, col2 = node:range()
+        local name = vim.api.nvim_buf_get_text(buf, row1, col1, row2, col2, {})[1]
+        local level = kind_to_capture_level[kind]
+        local range = {
+            ["start"] = { line = row1, character = col1 },
+            ["end"] = { line = row2, character = col2 },
+        }
+        if (
+            kind == "Tag" and current.kind == "Tag"
+            and range.start.line == current.range.start.line
+        ) then
+            current.name = current.name .. " " .. name
+        else
+            while level <= kind_to_capture_level[current.kind] do
                 current = current.parent
                 assert(current ~= nil)
             end
-
             ---@type Symbol
             local new = {
-                kind = kindMap[capture],
-                name = captureString,
+                kind = kind,
+                name = name,
                 detail = "",
-                selectionRange = {
-                    start = { character = col1, line = rangeStart },
-                    ["end"] = { character = col2, line = row2 - 1 },
-                },
-                range = {
-                    start = { character = col1, line = rangeStart },
-                    ["end"] = { character = col2, line = row2 - 1 },
-                },
-                children = {},
-
+                level = level,
                 parent = current,
-                level = current.level + 1,
-
-                captureLevel = captureLevel,
+                children = {},
+                range = range,
+                selectionRange = range,
             }
-
             table.insert(current.children, new)
             current = new
         end
+    end
 
-        local lineCount = vim.api.nvim_buf_line_count(0)
-        while current.captureLevel > 0 do
-            update_range_end(current, lineCount)
+    local function fix_range_ends(node, range_end)
+        if node.kind == "Tag" then return end
+        node.range["end"].line = range_end
+        node.selectionRange["end"].line = range_end
+        for i, child in ipairs(node.children) do
+            local new_range_end = range_end
+            if node.children[i+1] ~= nil then
+                new_range_end = node.children[i+1].range["start"].line - 1 or range_end
+            end
+            fix_range_ends(child, new_range_end)
+        end
+    end
+
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    fix_range_ends(root, line_count)
+
+    return true, root
+end
+
+---@type ProviderGetSymbols
+local function markdown_get_symbols(cache, buf)
+    local rootNode = cache.parser:parse()[1]:root()
+    local queryString = [[
+        [
+            (atx_heading (atx_h1_marker) heading_content: (_) @H1)
+            (atx_heading (atx_h2_marker) heading_content: (_) @H2)
+            (atx_heading (atx_h3_marker) heading_content: (_) @H3)
+            (atx_heading (atx_h4_marker) heading_content: (_) @H4)
+            (atx_heading (atx_h5_marker) heading_content: (_) @H5)
+            (atx_heading (atx_h6_marker) heading_content: (_) @H6)
+        ]
+    ]]
+    local query = vim.treesitter.query.parse("markdown", queryString)
+    local capture_group_to_level = { H1 = 1, H2 = 2, H3 = 3, H4 = 4, H5 = 5, H6 = 6 }
+    local root = Symbol_root()
+    local current = root
+    for id, node, _, _ in query:iter_captures(rootNode, 0) do
+        local kind = query.captures[id]
+        local row1, col1, row2, col2 = node:range()
+        local name = vim.api.nvim_buf_get_text(0, row1, col1, row2, col2, {})[1]
+        local level = capture_group_to_level[kind]
+        while current.level >= level do
             current = current.parent
             assert(current ~= nil)
         end
+        local start_row, start_col, end_row, end_col = node:parent():parent():range()
+        local section_range = {
+            ["start"] = { line = start_row, character = start_col },
+            ["end"] = { line = end_row - 1, character = end_col },
+        }
+        ---@type Symbol
+        local new = {
+            kind = kind,
+            name = name,
+            detail = "",
+            level = level,
+            parent = current,
+            children = {},
+            range = section_range,
+            selectionRange = section_range,
+        }
+        table.insert(current.children, new)
+        current = new
+    end
 
-        return true, root
-    end,
-}
+    return true, root
+end
 
 ---@type Provider
-local MarkdownProvider = {
-    name = "markdown",
-    init = nil,
+local TreesitterProvider = {
+    name = "treesitter",
     supports = function(cache, buf)
-        local val = vim.api.nvim_get_option_value("ft", { buf = buf })
-        if val ~= "markdown" then
-            return false
-        end
-        local ok, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
-        if not ok then
-            return false
-        end
+        local ft_to_parser_name = {
+            help = "vimdoc",
+            markdown = "markdown",
+        }
+        local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
+        local parser_name = ft_to_parser_name[ft]
+        if parser_name == nil then return false end
+        local ok, parser = pcall(vim.treesitter.get_parser, buf, parser_name)
+        if not ok then return false end
         cache.parser = parser
+        cache.ft = ft
         return true
     end,
     async_get_symbols = nil,
-    get_symbols = function(cache, _)
-        local rootNode = cache.parser:parse()[1]:root()
-
-        local queryString = [[
-            [
-                (atx_heading (atx_h1_marker) heading_content: (_) @h1)
-                (atx_heading (atx_h2_marker) heading_content: (_) @h2)
-                (atx_heading (atx_h3_marker) heading_content: (_) @h3)
-                (atx_heading (atx_h4_marker) heading_content: (_) @h4)
-                (atx_heading (atx_h5_marker) heading_content: (_) @h5)
-                (atx_heading (atx_h6_marker) heading_content: (_) @h6)
-            ]
-        ]]
-        local query = vim.treesitter.query.parse("markdown", queryString)
-
-        local captureLevelMap = { h1 = 1, h2 = 2, h3 = 3, h4 = 4, h5 = 5, h6 = 6 }
-        local kindMap = { h1 = "H1", h2 = "H2", h3 = "H3", h4 = "H4", h5 = "H5", h6 = "H6" }
-
-        local root = Symbol_root()
-        local current = root
-
-        local function update_range_end(node, rangeEnd)
-            if node.range ~= nil and node.level <= 6 then
-                node.range["end"].line = rangeEnd
-                node.selectionRange = node.range
-            end
-        end
-
-        for id, node, _, _ in query:iter_captures(rootNode, 0) do
-            local capture = query.captures[id]
-            local captureLevel = captureLevelMap[capture]
-
-            local row1, col1, row2, col2 = node:range()
-            local captureString = vim.api.nvim_buf_get_text(0, row1, col1, row2, col2, {})[1]
-
-            local prevHeadingsRangeEnd = row1 - 1
-            local rangeStart = row1
-            if captureLevel <= 5 then
-                prevHeadingsRangeEnd = prevHeadingsRangeEnd - 1
-                rangeStart = rangeStart - 1
-            end
-
-            while captureLevel <= current.level do
-                update_range_end(current, prevHeadingsRangeEnd)
-                current = current.parent
-                assert(current ~= nil)
-            end
-
-            ---@type Symbol
-            local new = {
-                kind = kindMap[capture],
-                name = captureString,
-                detail = "",
-                selectionRange = {
-                    start = { character = col1, line = rangeStart + 1 },
-                    ["end"] = { character = col2, line = row2 - 1 },
-                },
-                range = {
-                    start = { character = col1, line = rangeStart + 1 },
-                    ["end"] = { character = col2, line = row2 - 1 },
-                },
-                children = {},
-
-                parent = current,
-                level = captureLevel,
-            }
-
-            table.insert(current.children, new)
-            current = new
-        end
-
-        local lineCount = vim.api.nvim_buf_line_count(0)
-        while current.level > 0 do
-            update_range_end(current, lineCount)
-            current = current.parent
-            assert(current ~= nil)
-        end
-
-        return true, root
+    get_symbols = function(cache, buf)
+        ---@type table<string, ProviderGetSymbols>
+        local get_symbols_funs = {
+            help = vimdoc_get_symbols,
+            markdown = markdown_get_symbols,
+        }
+        local get_symbols = get_symbols_funs[cache.ft]
+        assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(cache.ft))
+        return get_symbols(cache, buf)
     end,
 }
 
@@ -1523,7 +1473,9 @@ local function sidebar_close(sidebar)
     if not sidebar_visible(sidebar) then return end
     sidebar_preview_close(sidebar)
     details_close(sidebar.details)
-    vim.api.nvim_win_close(sidebar.win, true)
+    if vim.api.nvim_win_is_valid(sidebar.win) then
+        vim.api.nvim_win_close(sidebar.win, true)
+    end
     sidebar.win = -1
 end
 
@@ -2731,8 +2683,7 @@ function M.setup(config)
     ---@type Provider[]
     local providers = {
         LspProvider,
-        VimdocProvider,
-        MarkdownProvider,
+        TreesitterProvider,
     }
 
     local symbols_retriever = SymbolsRetriever_new(providers, _config.providers)

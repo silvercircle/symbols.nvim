@@ -96,16 +96,12 @@ local M = {}
 ---@field timeout_ms integer
 ---@field filetype table<string, LspFileTypeConfig>
 
----@class VimdocConfig
----@field filetype table<string, LspFileTypeConfig>
-
----@class MarkdownConfig
+---@class TreesitterConfig
 ---@field filetype table<string, LspFileTypeConfig>
 
 ---@class ProvidersConfig
 ---@field lsp LspConfig
----@field vimdoc VimdocConfig
----@field markdown MarkdownConfig
+---@field treesitter TreesitterConfig
 
 ---@class Config
 ---@field hide_cursor boolean
@@ -225,21 +221,9 @@ M.default = {
                 }
             }
         },
-        vimdoc = {
+        treesitter = {
             filetype = {
-                default = {
-                    symbol_display = {
-                        H1 = { highlight = "@markup.heading.1.vimdoc" },
-                        H2 = { highlight = "@markup.heading.2.vimdoc" },
-                        H3 = { highlight = "@markup.heading.3.vimdoc" },
-                        Tag = { highlight = "@label.vimdoc" },
-                    }
-                }
-            }
-        },
-        markdown = {
-            filetype = {
-                default = {
+                markdown = {
                     symbol_display = {
                         H1 = { highlight = "@markup.heading.1.markdown" },
                         H2 = { highlight = "@markup.heading.2.markdown" },
@@ -248,8 +232,17 @@ M.default = {
                         H5 = { highlight = "@markup.heading.5.markdown" },
                         H6 = { highlight = "@markup.heading.6.markdown" },
                     }
-                }
-            },
+                },
+                help = {
+                    symbol_display = {
+                        H1 = { highlight = "@markup.heading.1.vimdoc" },
+                        H2 = { highlight = "@markup.heading.2.vimdoc" },
+                        H3 = { highlight = "@markup.heading.3.vimdoc" },
+                        Tag = { highlight = "@label.vimdoc" },
+                    }
+                },
+                default = { symbol_display = {} }
+            }
         },
     },
     dev = {
@@ -263,7 +256,7 @@ M.default = {
 function M.prepare_config(config)
     config = vim.tbl_deep_extend("force", M.default, config)
 
-    local providers = { "lsp", "vimdoc", "markdown" }
+    local providers = { "lsp", "treesitter" }
     for _, provider in ipairs(providers) do
         local default_config = config.providers[provider].filetype.default
         for ft, ft_config in pairs(config.providers[provider].filetype) do
