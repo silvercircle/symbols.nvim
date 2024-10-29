@@ -92,8 +92,10 @@ local M = {}
 ---@class LspFileTypeConfig
 ---@field symbol_display table<string, SymbolDisplayConfig>
 
+---@alias ProviderKindFun fun(symbol: Symbol): string
+
 ---@class ProviderConfig
----@field kinds table<string, table<string, string> | fun(provider: string, filetype: string): string >
+---@field kinds table<string, table<string, string> | ProviderKindFun>
 ---@field highlights table<string, table<string, string>>
 
 ---@class LspConfig : ProviderConfig
@@ -264,7 +266,7 @@ function M.prepare_config(config)
     config = vim.tbl_deep_extend("force", M.default, config)
     local providers = { "lsp", "treesitter" }
     for _, provider in ipairs(providers) do
-        extend_from_default(config.providers[provider].kinds)
+        -- extend_from_default(config.providers[provider].kinds)
         extend_from_default(config.providers[provider].highlights)
     end
 
@@ -278,6 +280,19 @@ function M.get_config_by_filetype(config, filetype)
     local ft_config = config[filetype]
     if ft_config ~= nil then return ft_config end
     return config.default
+end
+
+---@param kinds table<string, string> | ProviderKindFun
+---@param symbol Symbol
+---@return string
+function M.kind_for_symbol(kinds, symbol)
+    local kind = nil
+    if type(kinds) == "function" then
+        kind = kinds(symbol)
+    else
+        kind = kinds[symbol.kind]
+    end
+    return kind or symbol.kind
 end
 
 return M

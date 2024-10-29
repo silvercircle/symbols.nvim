@@ -7,10 +7,10 @@ M.AsciiSymbols = {
                 json = {
                     Module = "{}",
                     Array = "[]",
-                    Boolean = "b",
-                    String = "\"",
-                    Number = "#",
-                    Variable = "?",
+                    Boolean = " b",
+                    String = " \"",
+                    Number = " #",
+                    Variable = " ?",
                 },
                 yaml = {
                     Module = "{}",
@@ -20,18 +20,36 @@ M.AsciiSymbols = {
                     Number = "#",
                     Variable = "?",
                 },
-                lua = {
-                    Array = "[]",
-                    Boolean = "boolean",
-                    Constant = "param",
-                    Function = "fun",
-                    Method = "fun",
-                    Number = "number",
-                    Object = "{}",
-                    Package = "",
-                    String = "string",
-                    Variable = "local",
-                },
+                lua = function(symbol)
+                    local level = symbol.level
+                    local kind = symbol.kind
+                    local pkind = symbol.parent.kind
+                    if kind == "Function" then
+                        return ((level == 1) and "fun") or "fn"
+                    end
+                    if (pkind == "Array" or pkind == "Object") and (kind ~= "Array" and kind ~= "Object") then
+                        local obj_map = {
+                            Boolean = " b",
+                            Function = "fn",
+                            Number = " #",
+                            String = "\"\"",
+                            Variable = " ?",
+                        }
+                        return obj_map[kind] or "  "
+                    end
+                    local map = {
+                        Array = "[]",
+                        Boolean = "var",
+                        Constant = "param",
+                        Method = "fun",
+                        Number = "var",
+                        Object = "{}",
+                        Package = "",
+                        String = "var",
+                        Variable = "var",
+                    }
+                    return map[symbol.kind]
+                end,
                 go = {
                     Struct = "struct",
                     Class = "type",

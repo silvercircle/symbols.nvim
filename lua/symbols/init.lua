@@ -23,7 +23,6 @@ local function remove_user_commands()
     end
 end
 
-
 ---@type integer
 local DEFAULT_LOG_LEVEL = vim.log.levels.ERROR
 ---@type integer
@@ -415,7 +414,7 @@ local function vimdoc_get_symbols(cache, buf)
 end
 
 ---@type ProviderGetSymbols
-local function markdown_get_symbols(cache, buf)
+local function markdown_get_symbols(cache, _)
     local rootNode = cache.parser:parse()[1]:root()
     local queryString = [[
         [
@@ -692,7 +691,8 @@ end
 ---@field sidebar_side "left" | "right"
 ---@field symbol Symbol
 ---@field symbol_state SymbolState
----@field symbol_display_config table<string, SymbolDisplayConfig>
+---@field kinds table<string, string> | ProviderKindFun
+---@field highlights table<string, string>
 
 ---@param details DetailsWindow
 ---@param params DetailsOpenParams
@@ -735,12 +735,10 @@ local function details_open(details, params)
     ---@type Highlight[]
     local highlights = {}
 
-    vim.print(params.symbol_display_config)
-    local symbol_cfg = params.symbol_display_config[symbol.kind] or {}
-    local display_kind = symbol_cfg.kind or ""
+    local display_kind = cfg.kind_for_symbol(params.kinds, symbol)
     if display_kind ~= "" then
         table.insert(highlights, {
-            group = params.symbol_display_config[symbol.kind].highlight,
+            group = params.highlights[symbol.kind],
             line = #text + 1,
             col_start = 1,
             col_end = 1 + #display_kind,
@@ -1595,7 +1593,7 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 else
                     prefix = chars.unfolded .. " "
                 end
-                local kind_display = kinds_display_config[sym.kind] or sym.kind
+                local kind_display = cfg.kind_for_symbol(kinds_display_config, sym)
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
                 ---@type Highlight
@@ -1902,13 +1900,14 @@ local function _sidebar_details_open_params(sidebar)
         local symbols = sidebar_current_symbols(sidebar)
         local symbol, symbol_state = sidebar_current_symbol(sidebar)
         local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(sidebar) })
-        local symbol_display_config = cfg.symbols_display_config(symbols.provider_config, ft)
+        ---@type DetailsOpenParams
         return {
             sidebar_win = sidebar.win,
             sidebar_side = sidebar.win_dir,
             symbol = symbol,
             symbol_state = symbol_state,
-            symbol_display_config = symbol_display_config,
+            kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft),
+            highlights = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft),
         }
     end
 end
