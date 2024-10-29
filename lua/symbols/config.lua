@@ -31,6 +31,7 @@ M.SidebarAction = {
     ToggleAutoPreview = "toggle-auto-preview",
     ToggleCursorHiding = "toggle-cursor-hiding",
     ToggleCursorFollow = "toggle-cursor-follow",
+    ToggleAutoResize = "toggle-auto-resize",
     Help = "help",
     Close = "close",
 }
@@ -80,6 +81,7 @@ M.OpenDirection = {
 
 ---@class SidebarConfig
 ---@field open_direction OpenDirection
+---@field on_open_make_windows_equal boolean
 ---@field cursor_follow boolean
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
@@ -131,6 +133,7 @@ M.default = {
     hide_cursor = false,
     sidebar = {
         open_direction = "try-left",
+        on_open_make_windows_equal = true,
         cursor_follow = true,
         auto_resize = {
             enabled = true,
@@ -194,6 +197,7 @@ M.default = {
             ["tp"] = "toggle-auto-preview",
             ["tc"] = "toggle-cursor-hiding",
             ["tf"] = "toggle-cursor-follow",
+            ["t="] = "toggle-auto-resize",
 
             ["<2-LeftMouse>"] = "toggle-fold",
 

@@ -108,29 +108,45 @@ end
 
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
----@param table_ table
----@param enum table
+---@param arr1 table
+---@param arr2 table
+---@return table
+local function array_diff(arr1, arr2)
+    local diff = {}
+    for _, v in ipairs(arr1) do
+        if not vim.tbl_contains(arr2, v) then
+            table.insert(diff, v)
+        end
+    end
+    return diff
+end
+
+---@param array string[]
+---@param enum table<string, string>
+---@param array_name string
+local function assert_array_is_enum(array, enum, array_name)
+    local expected = vim.tbl_values(enum)
+    local actual_extra = array_diff(array, expected)
+    if #actual_extra > 0 then
+        assert(false, "Invalid values in array " .. array_name .. ": " .. vim.inspect(actual_extra))
+    end
+    local expected_extra = array_diff(expected, array)
+    if #expected_extra > 0 then
+        assert(false, "Missing values in array " .. array_name .. ": " .. vim.inspect(expected_extra))
+    end
+end
+
+---@param table_ table<string, any>
+---@param enum table<string, string>
 ---@param table_name string
 local function assert_keys_are_enum(table_, enum, table_name)
     local actual = vim.tbl_keys(table_)
     local expected = vim.tbl_values(enum)
-
-    local actual_extra = {}
-    for _, key in ipairs(actual) do
-        if not vim.tbl_contains(expected, key) then
-            table.insert(actual_extra, key)
-        end
-    end
+    local actual_extra = array_diff(actual, expected)
     if #actual_extra > 0 then
         assert(false, "Invalid keys in table " .. table_name .. ": " .. vim.inspect(actual_extra))
     end
-
-    local expected_extra = {}
-    for _, value in ipairs(expected) do
-        if not vim.tbl_contains(actual, value) then
-            table.insert(expected_extra, value)
-        end
-    end
+    local expected_extra = array_diff(expected, actual)
     if #expected_extra > 0 then
         assert(false, "Missing keys in table " .. table_name .. ": " .. vim.inspect(expected_extra))
     end
@@ -894,6 +910,7 @@ end
 
 ---@class GlobalSettings
 ---@field open_direction OpenDirection
+---@field on_open_make_windows_equal boolean
 
 ---@class GlobalState
 ---@field cursor CursorState
@@ -910,6 +927,7 @@ local function GlobalState_new()
         },
         settings = {
             open_direction = cfg.default.sidebar.open_direction,
+            on_open_make_windows_equal = cfg.default.sidebar.on_open_make_windows_equal,
         },
     }
     return obj
@@ -1400,27 +1418,30 @@ local function sidebar_str(sidebar)
 end
 
 ---@param sidebar Sidebar
+---@param vert_size integer
+local function sidebar_change_size(sidebar, vert_size)
+    local original_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(sidebar.win)
+    vim.cmd("vertical resize " .. tostring(vert_size))
+    vim.api.nvim_set_current_win(original_win)
+end
+
+---@param sidebar Sidebar
 ---@param buf_lines string[] | nil
 local function sidebar_refresh_size(sidebar, buf_lines)
-    if sidebar_visible(sidebar) then
-        if buf_lines == nil then
-            buf_lines = vim.api.nvim_buf_get_lines(sidebar.buf, 0, -1, false)
-        end
-        local vert_resize = sidebar.fixed_width
-        if sidebar.auto_resize.enabled then
-            local max_line_len = 0
-            for _, line in ipairs(buf_lines) do
-                max_line_len = math.max(max_line_len, #line)
-            end
-            vert_resize = max_line_len + 1
-            vert_resize = math.max(sidebar.auto_resize.min_width, vert_resize)
-            vert_resize = math.min(sidebar.auto_resize.max_width, vert_resize)
-        end
-        local original_win = vim.api.nvim_get_current_win()
-        vim.api.nvim_set_current_win(sidebar.win)
-        vim.cmd("vertical resize " .. tostring(vert_resize))
-        vim.api.nvim_set_current_win(original_win)
+    if not sidebar_visible(sidebar) or not sidebar.auto_resize.enabled then return end
+    local vert_resize = sidebar.fixed_width
+    if buf_lines == nil then
+        buf_lines = vim.api.nvim_buf_get_lines(sidebar.buf, 0, -1, false)
     end
+    local max_line_len = 0
+    for _, line in ipairs(buf_lines) do
+        max_line_len = math.max(max_line_len, #line)
+    end
+    vert_resize = max_line_len + 1
+    vert_resize = math.max(sidebar.auto_resize.min_width, vert_resize)
+    vert_resize = math.min(sidebar.auto_resize.max_width, vert_resize)
+    sidebar_change_size(sidebar, vert_resize)
 end
 
 ---@param dir OpenDirection
@@ -1476,8 +1497,11 @@ local function sidebar_open(sidebar)
         }
     )
 
+    sidebar_change_size(sidebar, sidebar.fixed_width)
     sidebar_refresh_size(sidebar, nil)
-    vim.cmd("wincmd =")
+    if sidebar.gs.settings.on_open_make_windows_equal then
+        vim.cmd("wincmd =")
+    end
 end
 
 ---@param sidebar Sidebar
@@ -2177,6 +2201,12 @@ local function sidebar_toggle_cursor_follow(sidebar)
     sidebar.cursor_follow = not sidebar.cursor_follow
 end
 
+---@param sidebar Sidebar
+local function sidebar_toggle_auto_resize(sidebar)
+    sidebar.auto_resize.enabled = not sidebar.auto_resize.enabled
+end
+
+---@type SidebarAction[]
 local help_options_order = {
     "goto-symbol",
     "peek-symbol",
@@ -2200,9 +2230,12 @@ local help_options_order = {
     "toggle-auto-preview",
     "toggle-cursor-hiding",
     "toggle-cursor-follow",
+    "toggle-auto-resize",
     "help",
     "close",
 }
+assert_array_is_enum(help_options_order, cfg.SidebarAction, "help_options_order")
+
 ---@type table<integer, SidebarAction>
 local action_order = {}
 for num, action in ipairs(help_options_order) do
@@ -2313,6 +2346,7 @@ local sidebar_actions = {
     ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
     ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
     ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
+    ["toggle-auto-resize"] = sidebar_toggle_auto_resize,
 
     ["help"] = sidebar_help,
     ["close"] = sidebar_close,
@@ -2715,6 +2749,7 @@ function M.setup(config)
     local gs = GlobalState_new()
     gs.cursor.hide = _config.hide_cursor
     gs.settings.open_direction = _config.sidebar.open_direction
+    gs.settings.on_open_make_windows_equal = _config.sidebar.on_open_make_windows_equal
 
     ---@type Provider[]
     local providers = {
