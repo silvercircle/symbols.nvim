@@ -3,6 +3,31 @@ local M = {}
 M.AsciiSymbols = {
     providers = {
         lsp = {
+            details = {
+                lua = function(symbol, ctx)
+                    local state = ctx.symbol_states[symbol]
+                    local kind = symbol.kind
+                    local detail = symbol.detail
+                    if (kind == "Function" or kind == "Method") and vim.startswith(detail, "function") then
+                        return vim.split(detail, "function ")[2]
+                    end
+                    if kind == "Number" or kind == "String" or kind == "Boolean" then
+                        return "= " .. detail
+                    end
+                    if kind == "Object" or kind == "Array" then
+                        return (state.folded and detail) or ""
+                    end
+                    if kind == "Package" then
+                        if vim.startswith(detail, "if") then return string.sub(detail, 4, -6) end
+                        if vim.startswith(detail, "elseif") then return string.sub(detail, 8, -6) end
+                        if vim.startswith(detail, "else") then return "" end
+                        if vim.startswith(detail, " for") then return string.sub(detail, 6, -1) end
+                        if vim.startswith(detail, "while") then return string.sub(detail, 7, -1) end
+                        return detail
+                    end
+                    return detail
+                end,
+            },
             kinds = {
                 json = {
                     Module = "{}",
@@ -27,7 +52,10 @@ M.AsciiSymbols = {
                     if kind == "Function" then
                         return ((level == 1) and "fun") or "fn"
                     end
-                    if (pkind == "Array" or pkind == "Object") and (kind ~= "Array" and kind ~= "Object") then
+                    if (
+                        (pkind == "Array" or pkind == "Object")
+                        and (kind ~= "Array" and kind ~= "Object")
+                    ) then
                         local obj_map = {
                             Boolean = " b",
                             Function = "fn",

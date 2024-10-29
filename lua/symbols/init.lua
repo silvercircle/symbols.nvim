@@ -1632,13 +1632,19 @@ end
 ---@return string[]
 local function sidebar_get_inline_details(symbols)
     local details = {}
+    local ft = vim.bo[symbols.buf].filetype
+    local details_fun = symbols.provider_config.details[ft]
+    if details_fun == nil then
+        details_fun = function(symbol, _) return symbol.detail end
+    end
 
     ---@param symbol Symbol
     local function get_details(symbol)
         if symbols.states[symbol].folded then return end
         for _, child in ipairs(symbol.children) do
             if symbols.states[child].visible then
-                table.insert(details, child.detail)
+                local detail = details_fun(child, { symbol_states = symbols.states })
+                table.insert(details, detail)
                 get_details(child)
             end
         end

@@ -94,7 +94,13 @@ local M = {}
 
 ---@alias ProviderKindFun fun(symbol: Symbol): string
 
+---@class ProviderDetailsFunCtx
+---@field symbol_states SymbolStates
+
+---@alias ProviderDetailsFun fun(symbol: Symbol, ctx: ProviderDetailsFunCtx): string
+
 ---@class ProviderConfig
+---@field details table<string, ProviderDetailsFun>
 ---@field kinds table<string, table<string, string> | ProviderKindFun>
 ---@field highlights table<string, table<string, string>>
 
@@ -192,6 +198,7 @@ M.default = {
     providers = {
         lsp = {
             timeout_ms = 1000,
+            details = {},
             kinds = { default = {} },
             highlights = {
                 default = {
@@ -225,6 +232,7 @@ M.default = {
             },
         },
         treesitter = {
+            details = {},
             kinds = { default = {} },
             highlights = {
                 markdown = {
@@ -266,7 +274,6 @@ function M.prepare_config(config)
     config = vim.tbl_deep_extend("force", M.default, config)
     local providers = { "lsp", "treesitter" }
     for _, provider in ipairs(providers) do
-        -- extend_from_default(config.providers[provider].kinds)
         extend_from_default(config.providers[provider].highlights)
     end
 
