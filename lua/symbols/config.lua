@@ -7,43 +7,48 @@ local M = {}
 ---@field guide_middle_item string
 ---@field guide_last_item string
 
----@alias SidebarAction
----| "goto-symbol"
----| "preview"
----| "peek"
----| "parent",
----| "next-symbol-at-level",
----| "prev-symbol-at-level",
----| "show-symbol-under-cursor"
----| "toggle-show-details"
----| "toggle-fold"
----| "unfold"
----| "unfold-recursively"
----| "unfold-one-level"
----| "unfold-all"
----| "fold"
----| "fold-recursively"
----| "fold-one-level"
----| "fold-all"
----| "toggle-details"
----| "toggle-auto-details"
----| "toggle-auto-preview"
----| "toggle-cursor-hiding"
----| "toggle-cursor-follow"
----| "help"
----| "close"
+---@enum SidebarAction
+M.SidebarAction = {
+    GotoSymbol = "goto-symbol",
+    PeekSymbol = "peek-symbol",
+    OpenPreview = "open-preview",
+    GotoParent = "goto-parent",
+    NextSymbolAtLevel = "next-symbol-at-level",
+    PrevSymbolAtLevel = "prev-symbol-at-level",
+    ShowSymbolUnderCursor = "show-symbol-under-cursor",
+    OpenDetailsWindow = "open-details-window",
+    ToggleFold = "toggle-fold",
+    Unfold = "unfold",
+    UnfoldRecursively = "unfold-recursively",
+    UnfoldOneLevel = "unfold-one-level",
+    UnfoldAll = "unfold-all",
+    Fold = "fold",
+    FoldRecursively = "fold-recursively",
+    FoldOneLevel = "fold-one-level",
+    FoldAll = "fold-all",
+    ToggleInlineDetails = "toggle-inline-details",
+    ToggleAutoDetailsWindow = "toggle-auto-details-window",
+    ToggleAutoPreview = "toggle-auto-preview",
+    ToggleCursorHiding = "toggle-cursor-hiding",
+    ToggleCursorFollow = "toggle-cursor-follow",
+    Help = "help",
+    Close = "close",
+}
 
 ---@alias KeymapsConfig table<string, SidebarAction?>
 
+---@enum DevAction
+M.DevAction = {
+    Reload = "reload",
+    Debug = "debug",
+    ShowConfig = "show-config",
+}
 
----@alias DevAction
----| "reload"
----| "debug"
----| "show-config"
-
----@alias PreviewAction
----| "close"
----| "goto-code"
+---@enum PreviewAction
+M.PreviewAction = {
+    Close = "close",
+    GotoCode = "goto-code",
+}
 
 ---@class PreviewConfig
 ---@field show_line_number boolean
@@ -65,11 +70,13 @@ local M = {}
 ---@field min_width integer
 ---@field max_width integer
 
----@alias OpenDirection
----| "left"
----| "right"
----| "try-left"
----| "try-right"
+---@enum OpenDirection
+M.OpenDirection = {
+    Left = "left",
+    Right = "right",
+    TryLeft = "try-left",
+    TryRight = "try-right",
+}
 
 ---@class SidebarConfig
 ---@field open_direction OpenDirection
@@ -157,13 +164,14 @@ M.default = {
         },
         keymaps = {
             ["<CR>"] = "goto-symbol",
-            ["o"] = "peek",
+            ["<RightMouse>"] = "goto-symbol",
+            ["o"] = "peek-symbol",
 
-            ["K"] = "preview",
-            ["d"] = "toggle-show-details",
+            ["K"] = "open-preview",
+            ["d"] = "open-details-window",
             ["gs"] = "show-symbol-under-cursor",
 
-            ["gp"] = "parent",
+            ["gp"] = "goto-parent",
             ["["] = "prev-symbol-at-level",
             ["]"] = "next-symbol-at-level",
 
@@ -181,14 +189,13 @@ M.default = {
             ["zm"] = "fold-one-level",
             ["zM"] = "fold-all",
 
-            ["td"] = "toggle-details",
-            ["tD"] = "toggle-auto-details",
+            ["td"] = "toggle-inline-details",
+            ["tD"] = "toggle-auto-details-window",
             ["tp"] = "toggle-auto-preview",
             ["tc"] = "toggle-cursor-hiding",
             ["tf"] = "toggle-cursor-follow",
 
             ["<2-LeftMouse>"] = "toggle-fold",
-            ["<RightMouse>"] = "goto-symbol",
 
             ["q"] = "close",
             ["?"] = "help",

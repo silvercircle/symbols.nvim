@@ -108,6 +108,34 @@ end
 
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
+---@param table_ table
+---@param enum table
+---@param table_name string
+local function assert_keys_are_enum(table_, enum, table_name)
+    local actual = vim.tbl_keys(table_)
+    local expected = vim.tbl_values(enum)
+
+    local actual_extra = {}
+    for _, key in ipairs(actual) do
+        if not vim.tbl_contains(expected, key) then
+            table.insert(actual_extra, key)
+        end
+    end
+    if #actual_extra > 0 then
+        assert(false, "Invalid keys in table " .. table_name .. ": " .. vim.inspect(actual_extra))
+    end
+
+    local expected_extra = {}
+    for _, value in ipairs(expected) do
+        if not vim.tbl_contains(actual, value) then
+            table.insert(expected_extra, value)
+        end
+    end
+    if #expected_extra > 0 then
+        assert(false, "Missing keys in table " .. table_name .. ": " .. vim.inspect(expected_extra))
+    end
+end
+
 ---@param win integer
 ---@param duration_ms integer
 local function flash_highlight(win, duration_ms, lines)
@@ -547,6 +575,7 @@ local preview_actions = {
     ["close"] = preview_close,
     ["goto-code"] = preview_goto_symbol,
 }
+assert_keys_are_enum(preview_actions, cfg.PreviewAction, "preview_actions")
 
 ---@param preview Preview
 ---@param params PreviewOpenParams
@@ -2070,10 +2099,10 @@ local function sidebar_fold_one_level(sidebar)
         return max_level
     end
 
-    ---@param symbols Symbols
+    ---@param _symbols Symbols
     ---@param level integer
     ---@param value boolean
-    local function _change_fold_at_level(symbols, level, value)
+    local function _change_fold_at_level(_symbols, level, value)
         local function change_fold(symbol)
             local state = symbols.states[symbol]
             if symbol.level == level then state.folded = value end
@@ -2083,7 +2112,7 @@ local function sidebar_fold_one_level(sidebar)
             end
         end
 
-        change_fold(symbols.root)
+        change_fold(_symbols.root)
     end
 
     local level = find_level_to_fold(symbols.root)
@@ -2150,14 +2179,13 @@ end
 
 local help_options_order = {
     "goto-symbol",
-    "peek",
-    "preview",
-    "toggle-show-details",
-    "prev-symbol",
-    "next-symbol",
-    "prev-symbol-up",
-    "next-symbol-up",
+    "peek-symbol",
+    "open-preview",
+    "open-details-window",
     "show-symbol-under-cursor",
+    "goto-parent",
+    "prev-symbol-at-level",
+    "next-symbol-at-level",
     "toggle-fold",
     "unfold",
     "fold",
@@ -2167,8 +2195,8 @@ local help_options_order = {
     "fold-one-level",
     "unfold-all",
     "fold-all",
-    "toggle-details",
-    "toggle-auto-details",
+    "toggle-inline-details",
+    "toggle-auto-details-window",
     "toggle-auto-preview",
     "toggle-cursor-hiding",
     "toggle-cursor-follow",
@@ -2192,6 +2220,7 @@ local function sidebar_help(sidebar)
 
     for key, action in pairs(sidebar.keymaps) do
         local ord = action_order[action]
+        log.info(tostring(ord) .. " " .. tostring(action))
         table.insert(keymaps[ord], key)
     end
 
@@ -2258,13 +2287,13 @@ end
 ---@type table<SidebarAction, fun(sidebar: Sidebar)>
 local sidebar_actions = {
     ["goto-symbol"] = sidebar_goto_symbol,
-    ["peek"] = sidebar_peek,
+    ["peek-symbol"] = sidebar_peek,
 
-    ["preview"] = sidebar_preview_open,
-    ["toggle-show-details"] = sidebar_toggle_show_details,
+    ["open-preview"] = sidebar_preview_open,
+    ["open-details-window"] = sidebar_toggle_show_details,
     ["show-symbol-under-cursor"] = sidebar_show_symbol_under_cursor,
 
-    ["parent"] = sidebar_goto_parent,
+    ["goto-parent"] = sidebar_goto_parent,
     ["prev-symbol-at-level"] = sidebar_prev_symbol_at_level,
     ["next-symbol-at-level"] = sidebar_next_symbol_at_level,
 
@@ -2279,8 +2308,8 @@ local sidebar_actions = {
     ["fold-all"] = sidebar_fold_all,
 
     ["toggle-fold"] = sidebar_toggle_fold,
-    ["toggle-details"] = sidebar_toggle_details,
-    ["toggle-auto-details"] = sidebar_toggle_auto_details,
+    ["toggle-inline-details"] = sidebar_toggle_details,
+    ["toggle-auto-details-window"] = sidebar_toggle_auto_details,
     ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
     ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
     ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
@@ -2288,6 +2317,8 @@ local sidebar_actions = {
     ["help"] = sidebar_help,
     ["close"] = sidebar_close,
 }
+
+assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
@@ -2493,10 +2524,11 @@ local function setup_dev(gs, sidebars, config)
 
     ---@type table<DevAction, fun()>
     local dev_action_to_fun = {
-        reload = reload,
-        debug = debug,
+        ["reload"] = reload,
+        ["debug"] = debug,
         ["show-config"] = show_config,
     }
+    assert_keys_are_enum(dev_action_to_fun, cfg.DevAction, "dev_action_to_fun")
 
     for key, action in pairs(config.dev.keymaps) do
         vim.keymap.set("n", key, dev_action_to_fun[action])
