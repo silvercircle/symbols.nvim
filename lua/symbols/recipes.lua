@@ -1,172 +1,180 @@
 local M = {}
 
-M.LspKindJsonAscii = {
-    Module = { kind = "{}" },
-    Array = { kind = "[]" },
-    Boolean = { kind = "b" },
-    String = { kind = "\"" },
-    Number = { kind = "#" },
-    Variable = { kind = "?" },
-}
-
-M.LspKindYamlAscii = {
-    Module = { kind = "{}" },
-    Array = { kind = "[]" },
-    Boolean = { kind = "b" },
-    String = { kind = "\"" },
-    Number = { kind = "#" },
-    Variable = { kind = "?" },
-}
-
-M.LspKindLuaAscii = {
-    Array = { kind = "[]" },
-    Boolean = { kind = "boolean" },
-    Constant = { kind = "param" },
-    Function = { kind = "fun" },
-    Method = { kind = "fun" },
-    Number = { kind = "number" },
-    Object = { kind = "{}" },
-    Package = { kind = "" },
-    String = { kind = "string" },
-    Variable = { kind = "local" },
-}
-
-M.LspKindGoAscii = {
-    Struct = { kind = "struct" },
-    Class = { kind = "type" },
-    Constant = { kind = "const" },
-    Function = { kind = "func" },
-    Method = { kind = "func" },
-    Field = { kind = "field" },
-}
-
-M.LspKindPythonAscii = {
-    Class = { kind = "class" },
-    Variable = { kind = "" },
-    Constant = { kind = "const" },
-    Function = { kind = "def" },
-    Method = { kind = "def" },
-}
-
-M.LspKindBashAscii = {
-    Variable = { kind = "$" },
-    Function = { kind = "fun" },
-}
-
-M.LspKindCssAscii = {
-    Class = { kind = "" },
-    Module = { kind = "" },
-}
-
-M.VimdocKindAscii = {
-    H1 = { kind = "" },
-    H2 = { kind = "" },
-    H3 = { kind = "" },
-    Tag = { kind = "*" },
-}
-
-M.MarkdownKindAscii = {
-    H1 = { kind = "" },
-    H2 = { kind = "" },
-    H3 = { kind = "" },
-    H4 = { kind = "" },
-    H5 = { kind = "" },
-    H6 = { kind = "" },
-}
-
-M.LspKindJavascriptAscii = {
-    Function = { kind = "fun" },
-    Constant = { kind = "const" },
-    Variable = { kind = "let" },
-    Property = { kind = "" },
-}
-
-M.LspKindTypescriptAscii = {
-    Function = { kind = "fun" },
-    Constant = { kind = "const" },
-    Variable = { kind = "let" },
-    Property = { kind = "" },
-}
-
 M.AsciiSymbols = {
     providers = {
         lsp = {
-            filetype = {
-                json = { symbol_display = M.LspKindJsonAscii },
-                yaml = { symbol_display = M.LspKindYamlAscii },
-                lua = { symbol_display = M.LspKindLuaAscii },
-                go = { symbol_display = M.LspKindGoAscii },
-                python = { symbol_display = M.LspKindPythonAscii },
-                sh = { symbol_display = M.LspKindBashAscii },
-                css = { symbol_display = M.LspKindCssAscii },
-                javascript = { symbol_display = M.LspKindJavascriptAscii },
-                typescript = { symbol_display = M.LspKindTypescriptAscii },
-                default = { symbol_display = {} },
+            kinds = {
+                json = {
+                    Module = "{}",
+                    Array = "[]",
+                    Boolean = "b",
+                    String = "\"",
+                    Number = "#",
+                    Variable = "?",
+                },
+                yaml = {
+                    Module = "{}",
+                    Array = "[]",
+                    Boolean = "b",
+                    String = "\"",
+                    Number = "#",
+                    Variable = "?",
+                },
+                lua = {
+                    Array = "[]",
+                    Boolean = "boolean",
+                    Constant = "param",
+                    Function = "fun",
+                    Method = "fun",
+                    Number = "number",
+                    Object = "{}",
+                    Package = "",
+                    String = "string",
+                    Variable = "local",
+                },
+                go = {
+                    Struct = "struct",
+                    Class = "type",
+                    Constant = "const",
+                    Function = "func",
+                    Method = "func",
+                    Field = "field",
+                },
+                python = {
+                    Class = "class",
+                    Variable = "",
+                    Constant = "const",
+                    Function = "def",
+                    Method = "def",
+                },
+                sh = {
+                    Variable = "$",
+                    Function = "fun",
+                },
+                css = {
+                    Class = "",
+                    Module = "",
+                },
+                javascript = {
+                    Function = "fun",
+                    Constant = "const",
+                    Variable = "let",
+                    Property = "",
+                },
+                typescript = {
+                    Function = "fun",
+                    Constant = "const",
+                    Variable = "let",
+                    Property = "",
+                },
+                default = {
+                    File = "filed",
+                    Module = "module",
+                    Namespace = "namespace",
+                    Package = "pkg",
+                    Class = "cls",
+                    Method = "fun",
+                    Property = "property",
+                    Field = "field",
+                    Constructor = "constructor",
+                    Enum = "enum",
+                    Interface = "interface",
+                    Function = "fun",
+                    Variable = "var",
+                    Constant = "const",
+                    String = "str",
+                    Number = "num",
+                    Boolean = "bool",
+                    Array = "array",
+                    Object = "object",
+                    Key = "key",
+                    Null = "null",
+                    EnumMember = "enum member",
+                    Struct = "struct",
+                    Event = "event",
+                    Operator = "operator",
+                    TypeParameter = "type parameter",
+                    Component = "component",
+                    Fragment = "fragment",
+                }
             }
         },
-        treesitter = { filetype = {
-            help = { symbol_display = M.VimdocKindAscii },
-            markdown = { symbol_display = M.MarkdownKindAscii },
-            default = { symbol_display = {} }
-        }},
+        treesitter = {
+            kinds = {
+                vimdoc = {
+                    H1 = "",
+                    H2 = "",
+                    H3 = "",
+                    Tag = "*",
+                },
+                markdown = {
+                    H1 = "",
+                    H2 = "",
+                    H3 = "",
+                    H4 = "",
+                    H5 = "",
+                    H6 = "",
+                },
+            }
+        }
     }
 }
 
 M.FancySymbols = {
     providers = {
         lsp = {
-            filetype = {
+            kinds = {
                 default = {
-                    symbol_display = {
-                        File = { kind = "󰈔" },
-                        Module = { kind = "󰆧" },
-                        Namespace = { kind = "󰅪" },
-                        Package = { kind = "󰏗" },
-                        Class = { kind = "𝓒" },
-                        Method = { kind = "ƒ" },
-                        Property = { kind = "" },
-                        Field = { kind = "󰆨" },
-                        Constructor = { kind = "" },
-                        Enum = { kind = "ℰ" },
-                        Interface = { kind = "󰜰" },
-                        Function = { kind = "ƒ" },
-                        Variable = { kind = "" },
-                        Constant = { kind = "" },
-                        String = { kind = "𝓐" },
-                        Number = { kind = "#" },
-                        Boolean = { kind = "⊨" },
-                        Array = { kind = "󰅪" },
-                        Object = { kind = "⦿" },
-                        Key = { kind = "🔐" },
-                        Null = { kind = "NULL" },
-                        EnumMember = { kind = "" },
-                        Struct = { kind = "𝓢" },
-                        Event = { kind = "🗲" },
-                        Operator = { kind = "+" },
-                        TypeParameter = { kind = "𝙏" },
-                        Component = { kind = "󰅴" },
-                        Fragment = { kind = "󰅴" },
-                    }
+                    File = "󰈔",
+                    Module = "󰆧",
+                    Namespace = "󰅪",
+                    Package = "󰏗",
+                    Class = "𝓒",
+                    Method = "ƒ",
+                    Property = "",
+                    Field = "󰆨",
+                    Constructor = "",
+                    Enum = "ℰ",
+                    Interface = "󰜰",
+                    Function = "ƒ",
+                    Variable = "",
+                    Constant = "",
+                    String = "𝓐",
+                    Number = "#",
+                    Boolean = "⊨",
+                    Array = "󰅪",
+                    Object = "⦿",
+                    Key = "🔐",
+                    Null = "NULL",
+                    EnumMember = "",
+                    Struct = "𝓢",
+                    Event = "🗲",
+                    Operator = "+",
+                    TypeParameter = "𝙏",
+                    Component = "󰅴",
+                    Fragment = "󰅴",
                 }
             }
         },
-        treesitter = { filetype = {
-            help = {
-                H1 = { kind = "" },
-                H2 = { kind = "" },
-                H3 = { kind = "" },
-                Tag = { kind = "*" },
-            },
-            markdown = {
-                H1 = { kind = "" },
-                H2 = { kind = "" },
-                H3 = { kind = "" },
-                H4 = { kind = "" },
-                H5 = { kind = "" },
-                H6 = { kind = "" },
-            },
-            default = { symbol_display = { }
-        }}},
+        treesitter = {
+            kinds = {
+                help = {
+                    H1 = "",
+                    H2 = "",
+                    H3 = "",
+                    Tag = "*",
+                },
+                markdown = {
+                    H1 = "",
+                    H2 = "",
+                    H3 = "",
+                    H4 = "",
+                    H5 = "",
+                    H6 = "",
+                },
+                default = {},
+            }
+        },
     }
 }
 

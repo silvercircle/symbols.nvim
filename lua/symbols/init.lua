@@ -1563,7 +1563,8 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
     local highlights = {}
 
     local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
-    local symbol_display_config = cfg.symbols_display_config(symbols.provider_config, symbols.provider, ft)
+    local kinds_display_config = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local highlights_config = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
 
     ---@param symbol Symbol
     ---@param indent string
@@ -1594,12 +1595,12 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 else
                     prefix = chars.unfolded .. " "
                 end
-                local kind_display = symbol_display_config[sym.kind].kind or sym.kind
+                local kind_display = kinds_display_config[sym.kind] or sym.kind
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
                 ---@type Highlight
                 local hl = {
-                    group = symbol_display_config[sym.kind].highlight,
+                    group = highlights_config[sym.kind],
                     line = line_nr,
                     col_start = #indent + #prefix,
                     col_end = #indent + #prefix + #kind_display
@@ -1901,9 +1902,7 @@ local function _sidebar_details_open_params(sidebar)
         local symbols = sidebar_current_symbols(sidebar)
         local symbol, symbol_state = sidebar_current_symbol(sidebar)
         local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(sidebar) })
-        local symbol_display_config = cfg.symbols_display_config(
-            symbols.provider_config, symbols.provider, ft
-        )
+        local symbol_display_config = cfg.symbols_display_config(symbols.provider_config, ft)
         return {
             sidebar_win = sidebar.win,
             sidebar_side = sidebar.win_dir,

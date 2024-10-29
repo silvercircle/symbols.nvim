@@ -92,12 +92,14 @@ local M = {}
 ---@class LspFileTypeConfig
 ---@field symbol_display table<string, SymbolDisplayConfig>
 
----@class LspConfig
----@field timeout_ms integer
----@field filetype table<string, LspFileTypeConfig>
+---@class ProviderConfig
+---@field kinds table<string, table<string, string> | fun(provider: string, filetype: string): string >
+---@field highlights table<string, table<string, string>>
 
----@class TreesitterConfig
----@field filetype table<string, LspFileTypeConfig>
+---@class LspConfig : ProviderConfig
+---@field timeout_ms integer
+
+---@class TreesitterConfig : ProviderConfig
 
 ---@class ProvidersConfig
 ---@field lsp LspConfig
@@ -188,60 +190,56 @@ M.default = {
     providers = {
         lsp = {
             timeout_ms = 1000,
-            filetype = {
+            kinds = { default = {} },
+            highlights = {
                 default = {
-                    symbol_display = {
-                        File = { highlight = "Identifier" },
-                        Module = { highlight = "Include" },
-                        Namespace = { highlight = "Include" },
-                        Package = { highlight = "Include" },
-                        Class = { highlight = "Type" },
-                        Method = { highlight = "Function" },
-                        Property = { highlight = "Identifier" },
-                        Field = { highlight = "Identifier" },
-                        Constructor = { highlight = "Special" },
-                        Enum = { highlight = "Type" },
-                        Interface = { highlight = "Type" },
-                        Function = { highlight = "Function" },
-                        Variable = { highlight = "Constant" },
-                        Constant = { highlight = "Constant" },
-                        String = { highlight = "String" },
-                        Number = { highlight = "Number" },
-                        Boolean = { highlight = "Boolean" },
-                        Array = { highlight = "Constant" },
-                        Object = { highlight = "Type" },
-                        Key = { highlight = "Type" },
-                        Null = { highlight = "Type" },
-                        EnumMember = { highlight = "Identifier" },
-                        Struct = { highlight = "Structure" },
-                        Event = { highlight = "Type" },
-                        Operator = { highlight = "Identifier" },
-                        TypeParameter = { highlight = "Identifier" },
-                    },
+                    File = "Identifier",
+                    Module = "Include",
+                    Namespace = "Include",
+                    Package = "Include",
+                    Class = "Type",
+                    Method = "Function",
+                    Property = "Identifier",
+                    Field = "Identifier",
+                    Constructor = "Special",
+                    Enum = "Type",
+                    Interface = "Type",
+                    Function = "Function",
+                    Variable = "Constant",
+                    Constant = "Constant",
+                    String = "String",
+                    Number = "Number",
+                    Boolean = "Boolean",
+                    Array = "Constant",
+                    Object = "Type",
+                    Key = "Type",
+                    Null = "Type",
+                    EnumMember = "Identifier",
+                    Struct = "Structure",
+                    Event = "Type",
+                    Operator = "Identifier",
+                    TypeParameter = "Identifier",
                 }
-            }
+            },
         },
         treesitter = {
-            filetype = {
+            kinds = { default = {} },
+            highlights = {
                 markdown = {
-                    symbol_display = {
-                        H1 = { highlight = "@markup.heading.1.markdown" },
-                        H2 = { highlight = "@markup.heading.2.markdown" },
-                        H3 = { highlight = "@markup.heading.3.markdown" },
-                        H4 = { highlight = "@markup.heading.4.markdown" },
-                        H5 = { highlight = "@markup.heading.5.markdown" },
-                        H6 = { highlight = "@markup.heading.6.markdown" },
-                    }
+                    H1 = "@markup.heading.1.markdown",
+                    H2 = "@markup.heading.2.markdown",
+                    H3 = "@markup.heading.3.markdown",
+                    H4 = "@markup.heading.4.markdown",
+                    H5 = "@markup.heading.5.markdown",
+                    H6 = "@markup.heading.6.markdown",
                 },
                 help = {
-                    symbol_display = {
-                        H1 = { highlight = "@markup.heading.1.vimdoc" },
-                        H2 = { highlight = "@markup.heading.2.vimdoc" },
-                        H3 = { highlight = "@markup.heading.3.vimdoc" },
-                        Tag = { highlight = "@label.vimdoc" },
-                    }
+                    H1 = "@markup.heading.1.vimdoc",
+                    H2 = "@markup.heading.2.vimdoc",
+                    H3 = "@markup.heading.3.vimdoc",
+                    Tag = "@label.vimdoc",
                 },
-                default = { symbol_display = {} }
+                default = {}
             }
         },
     },
@@ -252,37 +250,34 @@ M.default = {
     }
 }
 
+---@param config table
 ---@return Config
 function M.prepare_config(config)
-    config = vim.tbl_deep_extend("force", M.default, config)
-
-    local providers = { "lsp", "treesitter" }
-    for _, provider in ipairs(providers) do
-        local default_config = config.providers[provider].filetype.default
-        for ft, ft_config in pairs(config.providers[provider].filetype) do
+    local function extend_from_default(cfg)
+        for ft, _ in pairs(cfg) do
             if ft ~= "default" then
-                ft_config.symbol_display = vim.tbl_deep_extend(
-                    "force",
-                    default_config.symbol_display,
-                    ft_config.symbol_display or {}
-                )
+                cfg[ft] = vim.tbl_deep_extend("force", cfg.default, cfg[ft])
             end
         end
+    end
+
+    config = vim.tbl_deep_extend("force", M.default, config)
+    local providers = { "lsp", "treesitter" }
+    for _, provider in ipairs(providers) do
+        extend_from_default(config.providers[provider].kinds)
+        extend_from_default(config.providers[provider].highlights)
     end
 
     return config
 end
 
 ---@param config table
----@param provider_name string
 ---@param filetype string
----@return table<string, SymbolDisplayConfig>
-function M.symbols_display_config(config, provider_name, filetype)
-    local ft_config = config.filetype[filetype]
-    if ft_config ~= nil and ft_config.symbol_display ~= nil then
-        return ft_config.symbol_display
-    end
-    return config.filetype.default.symbol_display
+---@return table
+function M.get_config_by_filetype(config, filetype)
+    local ft_config = config[filetype]
+    if ft_config ~= nil then return ft_config end
+    return config.default
 end
 
 return M
