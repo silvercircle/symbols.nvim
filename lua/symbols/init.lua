@@ -1070,7 +1070,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
             local entry = retriever.cache[buf]
             entry.update_in_progress = false
             entry.post_update_callbacks = {}
-            log.debug(provider.name .. " failed")
+            log.warning(provider.name .. " failed")
             on_fail(provider.name)
         end
     end
@@ -1169,13 +1169,12 @@ end
 ---@param win integer
 ---@return WinSettings
 local function WinSettings_get(win)
-
     ---@param opt string
     local function get_opt(opt)
         return vim.api.nvim_get_option_value(opt, { win = win })
     end
-
-    return {
+    ---@type WinSettings
+    local settings = {
         number = get_opt("number"),
         relativenumber = get_opt("relativenumber"),
         signcolumn = get_opt("signcolumn"),
@@ -1183,18 +1182,17 @@ local function WinSettings_get(win)
         winfixwidth = get_opt("winfixwidth"),
         wrap = get_opt("wrap")
     }
+    return settings
 end
 
 ---@param win integer
 ---@param settings WinSettings
 local function WinSettings_apply(win, settings)
-
     ---@param name string
     ---@param value any
     local function set_opt(name, value)
         vim.api.nvim_set_option_value(name, value, { win = win })
     end
-
     for opt_name, opt_value in pairs(settings) do
         if opt_value ~= nil then
             set_opt(opt_name, opt_value)
@@ -2253,7 +2251,6 @@ local function sidebar_help(sidebar)
 
     for key, action in pairs(sidebar.keymaps) do
         local ord = action_order[action]
-        log.info(tostring(ord) .. " " .. tostring(action))
         table.insert(keymaps[ord], key)
     end
 
@@ -2749,15 +2746,15 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
     )
 end
 
----@param config table
-function M.setup(config)
-    local _config = cfg.prepare_config(config)
+function M.setup(...)
+    local _config = vim.tbl_deep_extend("force", ...)
+    local config = cfg.prepare_config(_config)
 
     ---@type GlobalState
     local gs = GlobalState_new()
-    gs.cursor.hide = _config.hide_cursor
-    gs.settings.open_direction = _config.sidebar.open_direction
-    gs.settings.on_open_make_windows_equal = _config.sidebar.on_open_make_windows_equal
+    gs.cursor.hide = config.hide_cursor
+    gs.settings.open_direction = config.sidebar.open_direction
+    gs.settings.on_open_make_windows_equal = config.sidebar.on_open_make_windows_equal
 
     ---@type Provider[]
     local providers = {
@@ -2765,13 +2762,13 @@ function M.setup(config)
         TreesitterProvider,
     }
 
-    local symbols_retriever = SymbolsRetriever_new(providers, _config.providers)
+    local symbols_retriever = SymbolsRetriever_new(providers, config.providers)
 
     ---@type Sidebar[]
     local sidebars = {}
 
-    if _config.dev.enabled then setup_dev(gs, sidebars, _config) end
-    setup_user_commands(gs, sidebars, symbols_retriever, _config)
+    if config.dev.enabled then setup_dev(gs, sidebars, config) end
+    setup_user_commands(gs, sidebars, symbols_retriever, config)
     setup_autocommands(gs, sidebars, symbols_retriever)
 end
 

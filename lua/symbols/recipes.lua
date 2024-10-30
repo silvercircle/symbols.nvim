@@ -1,5 +1,28 @@
 local M = {}
 
+---@param symbol Symbol
+---@return boolean
+local function lua_filter(symbol)
+    local kind = symbol.kind
+    local pkind = symbol.parent.kind
+    if kind == "Constant" or kind == "Package" then
+        return false
+    end
+    if (pkind == "Function" or pkind == "Method") and kind ~= "Function" then
+        return false
+    end
+    return true
+end
+
+M.DefaultFilters = {
+    sidebar = {
+        symbol_filter = function(ft, symbol)
+            if ft == "lua" then return lua_filter(symbol) end
+            return true
+        end,
+    },
+}
+
 M.AsciiSymbols = {
     providers = {
         lsp = {
