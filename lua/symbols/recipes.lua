@@ -65,6 +65,8 @@ M.AsciiSymbols = {
                         }
                         return obj_map[kind] or "  "
                     end
+                    if level == 1 and kind == "Object" then return " {}" end
+                    if level == 1 and kind == "Array" then return " []" end
                     local map = {
                         Array = "[]",
                         Boolean = "var",

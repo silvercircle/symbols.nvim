@@ -2577,7 +2577,9 @@ end
 local function setup_user_commands(gs, sidebars, symbols_retriever, config)
     create_user_command(
         "Symbols",
-        function()
+        function(e)
+            local jump_to_sidebar = not e.bang
+
             local win = vim.api.nvim_get_current_win()
             for _, sidebar in ipairs(sidebars) do
                 if not sidebar.deleted and sidebar.win == win then
@@ -2598,11 +2600,17 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             end
             if sidebar_visible(sidebar) then
                 vim.api.nvim_set_current_win(sidebar.win)
+                sidebar_refresh_symbols(sidebar)
+            else
+                sidebar_open(sidebar)
+                sidebar_refresh_symbols(sidebar)
+                if jump_to_sidebar then vim.api.nvim_set_current_win(sidebar.win) end
             end
-            sidebar_open(sidebar)
-            sidebar_refresh_symbols(sidebar)
         end,
-        { desc = "Open the Symbols sidebar" }
+        {
+            bang = true,
+            desc = "Open the Symbols sidebar",
+        }
     )
 
     create_user_command(
