@@ -130,7 +130,7 @@ M.OpenDirection = {
 
 ---@type Config
 M.default = {
-    hide_cursor = false,
+    hide_cursor = true,
     sidebar = {
         open_direction = "try-left",
         on_open_make_windows_equal = true,
@@ -167,7 +167,7 @@ M.default = {
         },
         keymaps = {
             ["<CR>"] = "goto-symbol",
-            ["<RightMouse>"] = "goto-symbol",
+            ["<RightMouse>"] = "peek-symbol",
             ["o"] = "peek-symbol",
 
             ["K"] = "open-preview",
@@ -175,8 +175,8 @@ M.default = {
             ["gs"] = "show-symbol-under-cursor",
 
             ["gp"] = "goto-parent",
-            ["["] = "prev-symbol-at-level",
-            ["]"] = "next-symbol-at-level",
+            ["[["] = "prev-symbol-at-level",
+            ["]]"] = "next-symbol-at-level",
 
             ["l"] = "unfold",
             ["zo"] = "unfold",
