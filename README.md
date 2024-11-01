@@ -5,7 +5,9 @@
 Sidebar with a list of symbols. Gives an overview of a file and allows quick
 navigation.
 
-**Warning** symbols.nvim is in beta. Breaking changes are expected, you may
+**Warning**
+
+symbols.nvim is in beta. Breaking changes are expected, you may
 encounter some bugs. Documentation may be confusing and behavior unpredictable.
 
 ## Features
@@ -130,6 +132,8 @@ There are a few predefined recipes (configs) that you can use:
 The recipes are available in `symbols.recipes` module.
 
 ## Reference
+
+Default config below.
 
 ```lua
 {

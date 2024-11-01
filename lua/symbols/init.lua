@@ -44,7 +44,8 @@ local function _log(msg, level)
         local date = os.date("%Y/%m/%d %H:%M:%S")
         local fun = ""
         if level == vim.log.levels.TRACE then
-            fun = "(" .. debug.getinfo(3, "n").name .. ") "
+            local name = debug.getinfo(3, "n").name or "<anonymous>"
+            fun = "(" .. name .. ") "
         end
         local _msg = table.concat({"[", date, "] ", LOG_LEVEL_STRING[level], " ", fun, msg}, "")
         vim.notify(_msg, level)
@@ -1103,18 +1104,20 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
     local entry = retriever.cache[buf]
 
     if entry.fresh then
+        log.trace("entry fresh, running _on_retrieve and quiting")
         table.insert(entry.post_update_callbacks, on_retrieve)
         _on_retrieve(entry.provider_name, true)(entry.root)
         return true
     end
 
     if entry.update_in_progress then
+        log.trace("update in progress, adding callback and quiting")
         -- TODO: do not add multiple callbacks for the same sidebar
         table.insert(entry.post_update_callbacks, on_retrieve)
         return true
     end
 
-    log.trace("Attempting to retrieve symbols")
+    log.trace("attempting to retrieve symbols")
     for _, provider in ipairs(retriever.providers) do
         local cache = {}
         if provider.init ~= nil then
@@ -1122,7 +1125,9 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
             provider.init(cache, config)
         end
         if provider.supports(cache, buf) then
+            log.trace("using provider: " .. provider.name)
             table.insert(entry.post_update_callbacks, on_retrieve)
+            entry.update_in_progress = true
             if provider.async_get_symbols ~= nil then
                 provider.async_get_symbols(
                     cache,
@@ -1139,7 +1144,6 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
                     _on_retrieve(provider.name, false)(symbol)
                 end
             end
-            entry.update_in_progress = true
             return true
         end
     end
@@ -2622,20 +2626,20 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
         { desc = "Close the Symbols sidebar" }
     )
 
-    create_user_command(
-        "SymbolsCurrent",
-        function()
-            local win = vim.api.nvim_get_current_win()
-            local sidebar = find_sidebar_for_win(sidebars, win)
-            if sidebar ~= nil then
-                local symbols = sidebar_current_symbols(sidebar)
-                local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
-                local symbol = symbol_at_pos(symbols.root, pos)
-                sidebar_set_cursor_at_symbol(sidebar, symbol, true)
-            end
-        end,
-        {}
-    )
+    -- create_user_command(
+    --     "SymbolsCurrent",
+    --     function()
+    --         local win = vim.api.nvim_get_current_win()
+    --         local sidebar = find_sidebar_for_win(sidebars, win)
+    --         if sidebar ~= nil then
+    --             local symbols = sidebar_current_symbols(sidebar)
+    --             local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
+    --             local symbol = symbol_at_pos(symbols.root, pos)
+    --             sidebar_set_cursor_at_symbol(sidebar, symbol, true)
+    --         end
+    --     end,
+    --     {}
+    -- )
 
     create_user_command(
         "SymbolsDebugToggle",
@@ -2747,8 +2751,7 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
 end
 
 function M.setup(...)
-    local _config = vim.tbl_deep_extend("force", ...)
-    local config = cfg.prepare_config(_config)
+    local config = cfg.prepare_config(...)
 
     ---@type GlobalState
     local gs = GlobalState_new()

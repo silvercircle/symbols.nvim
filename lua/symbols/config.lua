@@ -271,9 +271,9 @@ M.default = {
     }
 }
 
----@param config table
+---@param ... table
 ---@return Config
-function M.prepare_config(config)
+function M.prepare_config(...)
     local function extend_from_default(cfg)
         for ft, _ in pairs(cfg) do
             if ft ~= "default" then
@@ -282,7 +282,11 @@ function M.prepare_config(config)
         end
     end
 
-    config = vim.tbl_deep_extend("force", M.default, config)
+    local config = M.default
+    if #{...} > 0 then
+        config = vim.tbl_deep_extend("force", M.default, ...)
+    end
+
     local providers = { "lsp", "treesitter" }
     for _, provider in ipairs(providers) do
         extend_from_default(config.providers[provider].highlights)
