@@ -10,7 +10,7 @@ navigation.
 `symbols.nvim` is in beta. You may encounter bugs and there will be some
 breaking changes.
 
-https://github.com/oskarrrrrrr/symbols.nvim/blob/assets/assets/symbols_nvim_demo.mov
+https://github.com/oskarrrrrrr/symbols.nvim/blob/c987d79eeb6853e0b9cf5a7d50ee9b6ae7254695/assets/symbols_nvim_demo.mov
 
 ## Features
 
