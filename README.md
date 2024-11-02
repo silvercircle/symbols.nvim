@@ -14,23 +14,23 @@ https://github.com/user-attachments/assets/a63dd071-882c-4a9c-ac3e-3abe775ef7db
 
 ## Features
 
-- Listing Symbols - duh. Uses LSP servers and treesitter parsers which have to
+- **Listing Symbols** - duh. Uses LSP servers and treesitter parsers which have to
   be configured by the user.
-- Preview Window - glance at the code before committing to your next action.
+- **Preview Window** - glance at the code before committing to your next action.
   You can also edit the file in the preview window.
-- Inline Details - symbol details can be displayed inline. Those details are
+- **Inline Details** - symbol details can be displayed inline. Those details are
   given by a provider (e.g. LSP).
-- Dynamic Settings - a lot of settings can be changed on the fly, without
+- **Dynamic Settings** - some of the settings can be changed on the fly, without
   changing the config and reopening Neovim.
-- Preserving Folds - the sidebar preserves folds on changes (at least most of
+- **Preserving Folds** - the sidebar preserves folds on changes (at least most of
   them, most of the time).
-- Independent Sidebars - each sidebar has it's own view (folds) and settings,
+- **Independent Sidebars** - each sidebar has it's own view (folds) and settings,
   even when there are multiple sidebars showing symbols for the same file.
-- Custom Display Rules - symbols formatting and filtering can be configured per
+- **Custom Display Rules** - symbols formatting and filtering can be configured per
   language. The goal is to provide great default configurations for many
   languages while allowing the user to make adjusments according to their
   preference.
-- Mouse Support - you can use your mouse, no judgement.
+- **Mouse Support** - you can use your mouse, no judgement.
 
 <!-- panvimdoc-ignore-end -->
 
