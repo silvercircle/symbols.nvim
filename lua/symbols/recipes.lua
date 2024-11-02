@@ -73,7 +73,7 @@ M.AsciiSymbols = {
                 go = function(symbol, _)
                     local kind = symbol.kind
                     local detail = symbol.detail
-                    if kind == "Struct" then return "" end
+                    if kind == "Struct" or kind == "Interface" then return "" end
                     if kind == "Function" or kind == "Method" then
                         if vim.startswith(detail, "func") then
                             return string.sub(detail, 5, -1)

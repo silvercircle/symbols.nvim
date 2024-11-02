@@ -7,8 +7,8 @@ navigation.
 
 **Warning**
 
-symbols.nvim is in beta. Breaking changes are expected, you may
-encounter some bugs. Documentation may be confusing and behavior unpredictable.
+`symbols.nvim` is in beta. You may encounter bugs and there will be some
+breaking changes.
 
 ## Features
 
@@ -60,20 +60,37 @@ Using lazy.nvim:
 # Tips
 
 ## Help
-Press `?` in the sidebar to see help.
+
+Press `?` in the sidebar to see the available keymaps or run `:help symbols`.
 
 ## Preview Window
+
 Press the preview window keymap (by default "K") once to open it, the second
 time to jump to it. You can now move around the buffer and make changes. Press
 "q" to close the window or jump to the sidebar if auto preview is on. Yes, this
 means that by default you can't record macros in the preview window.
 
+## Keymaps
+
+How to remove a default keymap? Just set the value to `nil`.
+
 ## Dynamic Settings
+
 A lot of settings can be changed on the fly by using keymaps starting with "t".
 For example, try out "td" to toggle inline details, "t=" to toggle sidebar auto
 resizing or "tp" to toggle auto preview.
 
+## Inline Details
+
+By pressing "td" you can show inline details which are provided by some LSP
+servers. They give useful information about certain symbols. For instance, for
+a function the details might be the function params, for a variable it might be
+the initial value.
+Examples of languages that have nice support for details are Lua, Go and Rust.
+On the flip side, Javascript and Python do not show any details.
+
 ## Navigation
+
 Sometimes you want to get to a deeply nested symbol and unfold all the symbols
 on the way. To do that for the symbol under the cursor in the source window
 press "gs" when in the sidebar. Other useful mappings for more advanced
@@ -126,8 +143,7 @@ There are a few predefined recipes (configs) that you can use:
   are discarded by this config.
 - AsciiSymbols - symbol kind displayed as text. For instance, "Function" kind 
   might be displayed as "fun", "fn", "func" or "def" depending on the language.
-- FancySymbols - symbol kind will be displated as an icon. May be more
-  aesthetically plesaing but arguably less readable.
+- FancySymbols - symbol kind will be displated as an icon. Needs `lspkind.nvim`.
 
 The recipes are available in `symbols.recipes` module.
 

@@ -1,4 +1,4 @@
-*symbols.txt*           For NVIM v0.10.0          Last change: 2024 October 31
+*symbols.txt*          For NVIM v0.10.0          Last change: 2024 November 01
 
 ==============================================================================
 Table of Contents                                  *symbols-table-of-contents*
@@ -8,7 +8,9 @@ Table of Contents                                  *symbols-table-of-contents*
 2. Tips                                                         |symbols-tips|
   - Help                                                   |symbols-tips-help|
   - Preview Window                               |symbols-tips-preview-window|
+  - Keymaps                                             |symbols-tips-keymaps|
   - Dynamic Settings                           |symbols-tips-dynamic-settings|
+  - Inline Details                               |symbols-tips-inline-details|
   - Navigation                                       |symbols-tips-navigation|
   - Big Files                                         |symbols-tips-big-files|
 3. Commands                                                 |symbols-commands|
@@ -50,7 +52,7 @@ Using lazy.nvim:
 
 HELP                                                       *symbols-tips-help*
 
-Press `?` in the sidebar to see help.
+Press `?` in the sidebar to see the available keymaps or run `:help symbols`.
 
 
 PREVIEW WINDOW                                   *symbols-tips-preview-window*
@@ -61,11 +63,26 @@ time to jump to it. You can now move around the buffer and make changes. Press
 means that by default you can’t record macros in the preview window.
 
 
+KEYMAPS                                                 *symbols-tips-keymaps*
+
+How to remove a default keymap? Just set the value to `nil`.
+
+
 DYNAMIC SETTINGS                               *symbols-tips-dynamic-settings*
 
 A lot of settings can be changed on the fly by using keymaps starting with "t".
 For example, try out "td" to toggle inline details, "t=" to toggle sidebar auto
 resizing or "tp" to toggle auto preview.
+
+
+INLINE DETAILS                                   *symbols-tips-inline-details*
+
+By pressing "td" you can show inline details which are provided by some LSP
+servers. They give useful information about certain symbols. For instance, for
+a function the details might be the function params, for a variable it might be
+the initial value. Examples of languages that have nice support for details are
+Lua, Go and Rust. On the flip side, Javascript and Python do not show any
+details.
 
 
 NAVIGATION                                           *symbols-tips-navigation*
@@ -126,13 +143,14 @@ There are a few predefined recipes (configs) that you can use:
     are discarded by this config.
 - AsciiSymbols - symbol kind displayed as text. For instance, "Function" kind
     might be displayed as "fun", "fn", "func" or "def" depending on the language.
-- FancySymbols - symbol kind will be displated as an icon. May be more
-    aesthetically plesaing but arguably less readable.
+- FancySymbols - symbol kind will be displated as an icon. Needs `lspkind.nvim`.
 
 The recipes are available in `symbols.recipes` module.
 
 
 REFERENCE                                    *symbols-configuration-reference*
+
+Default config below.
 
 >lua
     {
