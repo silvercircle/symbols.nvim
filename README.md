@@ -10,6 +10,8 @@ navigation.
 `symbols.nvim` is in beta. You may encounter bugs and there will be some
 breaking changes.
 
+https://github.com/oskarrrrrrr/symbols.nvim/blob/assets/assets/symbols_nvim_demo.mov
+
 ## Features
 
 - Listing Symbols - duh. Uses LSP servers and treesitter parsers which have to
