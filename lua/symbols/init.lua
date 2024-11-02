@@ -1071,7 +1071,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
             local entry = retriever.cache[buf]
             entry.update_in_progress = false
             entry.post_update_callbacks = {}
-            log.warning(provider.name .. " failed")
+            log.warn(provider.name .. " failed")
             on_fail(provider.name)
         end
     end
