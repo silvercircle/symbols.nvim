@@ -306,15 +306,17 @@ end
 
 ---@param kinds table<string, string> | ProviderKindFun
 ---@param symbol Symbol
+---@param default_config (table<string, string> | ProviderKindFun) | nil
 ---@return string
-function M.kind_for_symbol(kinds, symbol)
+function M.kind_for_symbol(kinds, symbol, default_config)
     local kind = nil
     if type(kinds) == "function" then
         kind = kinds(symbol)
     else
         kind = kinds[symbol.kind]
     end
-    return kind or symbol.kind
+    if kind ~= nil then return kind end
+    return (default_config ~= nil and default_config[symbol.kind]) or symbol.kind
 end
 
 return M

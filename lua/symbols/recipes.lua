@@ -8,9 +8,26 @@ local function lua_filter(symbol)
     if kind == "Constant" or kind == "Package" then
         return false
     end
+    if (pkind == "Function" or pkind == "Method") then return false end
+    return true
+end
+
+---@param symbol Symbol
+---@return boolean
+local function python_filter(symbol)
+    local kind = symbol.kind
+    local pkind = symbol.parent.kind
     if (pkind == "Function" or pkind == "Method") and kind ~= "Function" then
         return false
     end
+    return true
+end
+
+---@param symbol Symbol
+---@return boolean
+local function javascript_filter(symbol)
+    local pkind = symbol.parent.kind
+    if (pkind == "Function" or pkind == "Method" or pkind == "Constructor") then return false end
     return true
 end
 
@@ -18,6 +35,9 @@ M.DefaultFilters = {
     sidebar = {
         symbol_filter = function(ft, symbol)
             if ft == "lua" then return lua_filter(symbol) end
+            if ft == "python" then return python_filter(symbol) end
+            if ft == "javascript" then return javascript_filter(symbol) end
+            if ft == "typescript" then return javascript_filter(symbol) end
             return true
         end,
     },
@@ -46,6 +66,29 @@ M.AsciiSymbols = {
                         if vim.startswith(detail, "else") then return "" end
                         if vim.startswith(detail, " for") then return string.sub(detail, 6, -1) end
                         if vim.startswith(detail, "while") then return string.sub(detail, 7, -1) end
+                        return detail
+                    end
+                    return detail
+                end,
+                go = function(symbol, _)
+                    local kind = symbol.kind
+                    local detail = symbol.detail
+                    if kind == "Struct" then return "" end
+                    if kind == "Function" or kind == "Method" then
+                        if vim.startswith(detail, "func") then
+                            return string.sub(detail, 5, -1)
+                        end
+                        return detail
+                    end
+                    return detail
+                end,
+                rust = function(symbol, _)
+                    local kind = symbol.kind
+                    local detail = symbol.detail
+                    if kind == "Function" or kind == "Method" then
+                        if vim.startswith(detail, "fn") then
+                            return string.sub(detail, 3, -1)
+                        end
                         return detail
                     end
                     return detail
@@ -104,17 +147,31 @@ M.AsciiSymbols = {
                     return map[symbol.kind]
                 end,
                 go = {
-                    Struct = "struct",
                     Class = "type",
                     Constant = "const",
+                    Field = "",
                     Function = "func",
+                    Interface = "interface",
                     Method = "func",
-                    Field = "field",
+                    Struct = "struct",
+                    Variable = "var",
+                },
+                rust = {
+                    Enum = "enum",
+                    EnumMember = "",
+                    Field = "",
+                    Function = "fn",
+                    Interface = "trait",
+                    Method = "fn",
+                    Module = "mod",
+                    Object = "",
+                    Struct = "struct",
+                    TypeParameter = "type",
                 },
                 python = {
                     Class = "class",
                     Variable = "",
-                    Constant = "const",
+                    Constant = "",
                     Function = "def",
                     Method = "def",
                 },
@@ -127,23 +184,29 @@ M.AsciiSymbols = {
                     Module = "",
                 },
                 javascript = {
-                    Function = "fun",
+                    Class = "class",
                     Constant = "const",
-                    Variable = "let",
+                    Constructor = "fun",
+                    Function = "fun",
+                    Method = "fun",
                     Property = "",
+                    Variable = "let",
                 },
                 typescript = {
-                    Function = "fun",
+                    Class = "class",
                     Constant = "const",
-                    Variable = "let",
+                    Constructor = "fun",
+                    Function = "fun",
+                    Method = "fun",
                     Property = "",
+                    Variable = "let",
                 },
                 default = {
-                    File = "filed",
+                    File = "file",
                     Module = "module",
                     Namespace = "namespace",
                     Package = "pkg",
-                    Class = "cls",
+                    Class = "class",
                     Method = "fun",
                     Property = "property",
                     Field = "field",
@@ -164,7 +227,7 @@ M.AsciiSymbols = {
                     Struct = "struct",
                     Event = "event",
                     Operator = "operator",
-                    TypeParameter = "type parameter",
+                    TypeParameter = "type param",
                     Component = "component",
                     Fragment = "fragment",
                 }
@@ -176,7 +239,7 @@ M.AsciiSymbols = {
                     H1 = "",
                     H2 = "",
                     H3 = "",
-                    Tag = "*",
+                    Tag = "",
                 },
                 markdown = {
                     H1 = "",
@@ -215,11 +278,11 @@ M.FancySymbols = {
                     Boolean = "⊨",
                     Array = "󰅪",
                     Object = "⦿",
-                    Key = "🔐",
+                    Key = "󰌋",
                     Null = "NULL",
                     EnumMember = "",
                     Struct = "𝓢",
-                    Event = "🗲",
+                    Event = "",
                     Operator = "+",
                     TypeParameter = "𝙏",
                     Component = "󰅴",
@@ -233,7 +296,7 @@ M.FancySymbols = {
                     H1 = "",
                     H2 = "",
                     H3 = "",
-                    Tag = "*",
+                    Tag = "",
                 },
                 markdown = {
                     H1 = "",

@@ -1617,6 +1617,7 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
 
     local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
     local kinds_display_config = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local kinds_default_config = symbols.provider_config.kinds.default
     local highlights_config = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
 
     ---@param symbol Symbol
@@ -1648,7 +1649,7 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 else
                     prefix = chars.unfolded .. " "
                 end
-                local kind_display = cfg.kind_for_symbol(kinds_display_config, sym)
+                local kind_display = cfg.kind_for_symbol(kinds_display_config, sym, kinds_default_config)
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
                 ---@type Highlight
