@@ -129,8 +129,11 @@ What if you notice slow downs while working on a file of reasonable size?
   Symbols sidebar and jumps to it unless called with the bang (`!`). If called
   when the sidebar is already open then jumps to it regardless of the bang.
   When called in a sidebar jumps back to the source code.
+- `:SymbolsToggle[!]` An alternative main mapping. Opens the sidebar and jumps
+  to it unless called with the bang (`!`). Closes the sidebar if already open.
+- `:SymbolsOpen[!]` Opens the sidebar and jumps to it unless called with the
+  bang (`!`).
 - `:SymbolsClose` Closes the sidebar.
-
 
 # Configuration
 

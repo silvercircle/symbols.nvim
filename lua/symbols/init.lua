@@ -2577,6 +2577,19 @@ end
 ---@param symbols_retriever SymbolsRetriever
 ---@param config Config
 local function setup_user_commands(gs, sidebars, symbols_retriever, config)
+
+    ---@return Sidebar
+    local function _sidebar_new()
+        local sidebar, num = find_sidebar_for_reuse(sidebars)
+        if sidebar == nil then
+            sidebar = sidebar_new_obj()
+            table.insert(sidebars, sidebar)
+            num = #sidebars
+        end
+        sidebar_new(sidebar, symbols_retriever, num, config.sidebar, gs, config.dev.enabled)
+        return sidebar
+    end
+
     create_user_command(
         "Symbols",
         function(e)
@@ -2589,17 +2602,8 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
                     return
                 end
             end
-            local sidebar = find_sidebar_for_win(sidebars, win)
-            if sidebar == nil then
-                local num
-                sidebar, num = find_sidebar_for_reuse(sidebars)
-                if sidebar == nil then
-                    sidebar = sidebar_new_obj()
-                    table.insert(sidebars, sidebar)
-                    num = #sidebars
-                end
-                sidebar_new(sidebar, symbols_retriever, num, config.sidebar, gs, config.dev.enabled)
-            end
+
+            local sidebar = find_sidebar_for_win(sidebars, win) or _sidebar_new()
             if sidebar_visible(sidebar) then
                 vim.api.nvim_set_current_win(sidebar.win)
                 sidebar_refresh_symbols(sidebar)
@@ -2611,7 +2615,25 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
         end,
         {
             bang = true,
-            desc = "Open the Symbols sidebar",
+            desc = "Open the Symbols sidebar or jump to source code",
+        }
+    )
+
+    create_user_command(
+        "SymbolsOpen",
+        function(e)
+            local jump_to_sidebar = not e.bang
+            local win = vim.api.nvim_get_current_win()
+            local sidebar = find_sidebar_for_win(sidebars, win) or _sidebar_new()
+            if not sidebar_visible(sidebar) then
+                sidebar_open(sidebar)
+                sidebar_refresh_symbols(sidebar)
+                if jump_to_sidebar then vim.api.nvim_set_current_win(sidebar.win) end
+            end
+        end,
+        {
+            bang = true,
+            desc = "Opens the Symbols sidebar"
         }
     )
 
@@ -2625,6 +2647,26 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             end
         end,
         { desc = "Close the Symbols sidebar" }
+    )
+
+    create_user_command(
+        "SymbolsToggle",
+        function(e)
+            local jump_to_sidebar = not e.bang
+            local win = vim.api.nvim_get_current_win()
+            local sidebar = find_sidebar_for_win(sidebars, win) or _sidebar_new()
+            if sidebar_visible(sidebar) then
+                sidebar_close(sidebar)
+            else
+                sidebar_open(sidebar)
+                sidebar_refresh_symbols(sidebar)
+                if jump_to_sidebar then vim.api.nvim_set_current_win(sidebar.win) end
+            end
+        end,
+        {
+            bang = true,
+            desc = "Open or close the Symbols sidebar"
+        }
     )
 
     -- create_user_command(
