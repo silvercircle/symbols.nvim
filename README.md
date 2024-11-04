@@ -193,6 +193,9 @@ Default config below.
         show_inline_details = false,
         -- Show details floating window at all times.
         show_details_pop_up = false,
+        -- When enabled every symbol will be automatically peeked after cursor
+        -- movement.
+        auto_peek = false,
         -- Whether the sidebar should wrap text.
         wrap = false,
         -- Whether to show the guide lines.
@@ -294,6 +297,8 @@ Default config below.
             ["tc"] = "toggle-cursor-hiding",
             -- Toggles cursor following (see sidebar.cursor_follow).
             ["tf"] = "toggle-cursor-follow",
+            -- Toggles automatic peeking on cursor movement (see sidebar.auto_peek).
+            ["to"] = "toggle-auto-peek",
             -- Toggles automatic sidebar resizing (see sidebar.auto_resize).
             ["t="] = "toggle-auto-resize",
 

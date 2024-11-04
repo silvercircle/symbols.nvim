@@ -153,19 +153,36 @@ local function assert_keys_are_enum(table_, enum, table_name)
     end
 end
 
+---@type table<integer, integer>
+local _prev_flash_highlight_ns = {}
+
+local function _clear_flash_highlights(buf, ns)
+    if _prev_flash_highlight_ns[buf] == ns then
+        pcall(vim.api.nvim_buf_clear_namespace, buf, ns, 0, -1)
+        _prev_flash_highlight_ns[buf] = nil
+    end
+end
+
 ---@param win integer
 ---@param duration_ms integer
-local function flash_highlight(win, duration_ms, lines)
-    local bufnr = vim.api.nvim_win_get_buf(win)
-    local line = vim.api.nvim_win_get_cursor(win)[1]
+local function flash_highlight_under_cursor(win, duration_ms, lines)
+    local buf = vim.api.nvim_win_get_buf(win)
+
+    local prev_ns = _prev_flash_highlight_ns[buf]
+    if prev_ns ~= nil then _clear_flash_highlights(buf, prev_ns) end
+
     local ns = vim.api.nvim_create_namespace("")
+    _prev_flash_highlight_ns[buf] = ns
+    local line = vim.api.nvim_win_get_cursor(win)[1]
     for i = 1, lines do
-        vim.api.nvim_buf_add_highlight(bufnr, ns, "Visual", line - 1 + i - 1, 0, -1)
+        vim.api.nvim_buf_add_highlight(
+            buf, ns, "Visual", line - 1 + i - 1, 0, -1
+        )
     end
-    local remove_highlight = function()
-        pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
-    end
-    vim.defer_fn(remove_highlight, duration_ms)
+    vim.defer_fn(
+        function() _clear_flash_highlights(buf, ns) end,
+        duration_ms
+    )
 end
 
 ---@param buf integer
@@ -550,7 +567,7 @@ local function preview_new_obj()
     return {
         win = -1,
         locked = false,
-        auto_show = cfg.default.sidebar.preview.show_alawys,
+        auto_show = cfg.default.sidebar.preview.show_always,
         source_buf = -1,
         keymaps_to_remove = {},
     }
@@ -1244,10 +1261,12 @@ end
 ---@field keymaps KeymapsConfig
 ---@field symbol_filter SymbolFilter
 ---@field cursor_follow boolean
+---@field auto_peek boolean
 
 ---@return Sidebar
 local function sidebar_new_obj()
-    return {
+    local config = cfg.default.sidebar
+    local sidebar = {
         gs = GlobalState_new(),
         deleted = false,
         win = -1,
@@ -1255,21 +1274,26 @@ local function sidebar_new_obj()
         win_settings = WinSettings_new(),
         buf = -1,
         source_win = -1,
+        visible = false,
         symbols_cache = SymbolsCache_new(),
         buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
         symbol_display_config = {},
         preview = preview_new_obj(),
         details = details_new_obj(),
-        char_config = cfg.default.sidebar.chars,
+        char_config = config.chars,
         show_inline_details = false,
         show_guide_lines = false,
         wrap = false,
-        auto_resize = vim.deepcopy(cfg.default.sidebar.auto_resize, true),
-        fixed_width = cfg.default.sidebar.fixed_width,
-        keymaps = cfg.default.sidebar.keymaps,
+        auto_resize = vim.deepcopy(config.auto_resize, true),
+        fixed_width = config.fixed_width,
+        keymaps = config.keymaps,
         symbol_state = {},
+        symbol_filter = config.symbol_filter,
+        cursor_follow = config.cursor_follow,
+        auto_peek = config.auto_peek,
     }
+    return sidebar
 end
 
 ---@param sidebar Sidebar
@@ -1929,7 +1953,7 @@ local function sidebar_goto_symbol(sidebar)
         { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
     )
     vim.fn.win_execute(sidebar.source_win, "normal! zz")
-    flash_highlight(sidebar.source_win, 400, 1)
+    flash_highlight_under_cursor(sidebar.source_win, 400, 1)
 end
 
 ---@param sidebar Sidebar
@@ -1976,8 +2000,14 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_peek(sidebar)
+    local reopen_details = sidebar.details.win ~= -1
+    if reopen_details then details_close(sidebar.details) end
+    local reopen_preview = sidebar.preview.win ~= -1
+    if reopen_preview then preview_close(sidebar.preview) end
     sidebar_goto_symbol(sidebar)
     vim.api.nvim_set_current_win(sidebar.win)
+    if reopen_details then details_open(sidebar.details, _sidebar_details_open_params(sidebar)()) end
+    if reopen_preview then sidebar_preview_open(sidebar) end
 end
 
 ---@param sidebar Sidebar
@@ -2205,6 +2235,11 @@ local function sidebar_toggle_cursor_follow(sidebar)
 end
 
 ---@param sidebar Sidebar
+local function sidebar_toggle_auto_peek(sidebar)
+    sidebar.auto_peek = not sidebar.auto_peek
+end
+
+---@param sidebar Sidebar
 local function sidebar_toggle_auto_resize(sidebar)
     sidebar.auto_resize.enabled = not sidebar.auto_resize.enabled
 end
@@ -2233,6 +2268,7 @@ local help_options_order = {
     "toggle-auto-preview",
     "toggle-cursor-hiding",
     "toggle-cursor-follow",
+    "toggle-auto-peek",
     "toggle-auto-resize",
     "help",
     "close",
@@ -2348,6 +2384,7 @@ local sidebar_actions = {
     ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
     ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
     ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
+    ["toggle-auto-peek"] = sidebar_toggle_auto_peek,
     ["toggle-auto-resize"] = sidebar_toggle_auto_resize,
 
     ["help"] = sidebar_help,
@@ -2360,6 +2397,7 @@ assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
 local function sidebar_on_cursor_move(sidebar)
     preview_on_cursor_move(sidebar.preview, _sidebar_preview_open_params(sidebar))
     details_on_cursor_move(sidebar.details, _sidebar_details_open_params(sidebar))
+    if sidebar.auto_peek then sidebar_peek(sidebar) end
 end
 
 ---@param sidebar Sidebar
@@ -2400,6 +2438,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.fixed_width = config.fixed_width
     sidebar.symbol_filter = config.symbol_filter
     sidebar.cursor_follow = config.cursor_follow
+    sidebar.auto_peek = config.auto_peek
 
     sidebar.details.show_debug_info = debug
 
