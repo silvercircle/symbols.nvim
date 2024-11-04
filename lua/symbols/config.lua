@@ -52,6 +52,7 @@ M.PreviewAction = {
 }
 
 ---@class PreviewConfig
+---@field show_always boolean
 ---@field show_line_number boolean
 ---@field auto_size boolean
 ---@field auto_size_extra_lines integer
@@ -154,6 +155,7 @@ M.default = {
             guide_last_item = "└",
         },
         preview = {
+            show_always = false,
             show_line_number = false,
             auto_size = true,
             auto_size_extra_lines = 6,

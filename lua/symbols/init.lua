@@ -550,7 +550,7 @@ local function preview_new_obj()
     return {
         win = -1,
         locked = false,
-        auto_show = false,
+        auto_show = cfg.default.sidebar.preview.show_alawys,
         source_buf = -1,
         keymaps_to_remove = {},
     }
@@ -2389,6 +2389,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
 
     sidebar.gs = gs
     sidebar.preview_config = config.preview
+    sidebar.preview.auto_show = config.preview.show_always
     sidebar.show_inline_details = config.show_inline_details
     sidebar.details.auto_show = config.show_details_pop_up
     sidebar.show_guide_lines = config.show_guide_lines

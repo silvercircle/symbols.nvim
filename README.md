@@ -206,6 +206,9 @@ Default config below.
         },
         -- Config for the preview window.
         preview = {
+            -- Whether the preview window is always opened when the sidebar is
+            -- focused.
+            show_always = false,
             -- Whether the preview window should show line numbers.
             show_line_number = false,
             -- Whether to determine the preview window's height automatically.
