@@ -5,10 +5,10 @@
 Sidebar with a list of symbols. Gives an overview of a file and allows quick
 navigation.
 
-**Warning**
-
-`symbols.nvim` is in beta. You may encounter bugs and there will be some
-breaking changes.
+> **Warning**
+> `symbols.nvim` is in beta. You may encounter bugs and there will be some
+> breaking changes. For a more stable experience use tags (e.g. "v0.1.0") with
+> you plugin manager.
 
 https://github.com/user-attachments/assets/a63dd071-882c-4a9c-ac3e-3abe775ef7db
 
