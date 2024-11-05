@@ -1,30 +1,32 @@
-==============================================================================
-Table of Contents                                  *symbols-table-of-contents*
-
-1. Requirements                                         |symbols-requirements|
-  - Quick Start                             |symbols-requirements-quick-start|
-2. Tips                                                         |symbols-tips|
-  - Help                                                   |symbols-tips-help|
-  - Preview Window                               |symbols-tips-preview-window|
-  - Keymaps                                             |symbols-tips-keymaps|
-  - Dynamic Settings                           |symbols-tips-dynamic-settings|
-  - Inline Details                               |symbols-tips-inline-details|
-  - Navigation                                       |symbols-tips-navigation|
-  - Big Files                                         |symbols-tips-big-files|
-3. Commands                                                 |symbols-commands|
-4. Configuration                                       |symbols-configuration|
-  - Reference                                |symbols-configuration-reference|
-5. Alternatives                                         |symbols-alternatives|
+*sybmols.txt*          For NVIM v0.10.0          Last change: 2024 November 05
 
 ==============================================================================
-1. Requirements                                         *symbols-requirements*
+Table of Contents                                  *sybmols-table-of-contents*
+
+1. Requirements                                         |sybmols-requirements|
+  - Quick Start                             |sybmols-requirements-quick-start|
+2. Tips                                                         |sybmols-tips|
+  - Help                                                   |sybmols-tips-help|
+  - Preview Window                               |sybmols-tips-preview-window|
+  - Keymaps                                             |sybmols-tips-keymaps|
+  - Dynamic Settings                           |sybmols-tips-dynamic-settings|
+  - Inline Details                               |sybmols-tips-inline-details|
+  - Navigation                                       |sybmols-tips-navigation|
+  - Big Files                                         |sybmols-tips-big-files|
+3. Commands                                                 |sybmols-commands|
+4. Configuration                                       |sybmols-configuration|
+  - Reference                                |sybmols-configuration-reference|
+5. Alternatives                                         |sybmols-alternatives|
+
+==============================================================================
+1. Requirements                                         *sybmols-requirements*
 
 - neovim 0.10+
 - LSP servers for desired languages
 - treesitter parsers for markdown and vimdoc (`:TSInstall markdown vimdoc`)
 
 
-QUICK START                                 *symbols-requirements-quick-start*
+QUICK START                                 *sybmols-requirements-quick-start*
 
 Using lazy.nvim:
 
@@ -45,15 +47,15 @@ Using lazy.nvim:
 
 
 ==============================================================================
-2. Tips                                                         *symbols-tips*
+2. Tips                                                         *sybmols-tips*
 
 
-HELP                                                       *symbols-tips-help*
+HELP                                                       *sybmols-tips-help*
 
 Press `?` in the sidebar to see the available keymaps or run `:help symbols`.
 
 
-PREVIEW WINDOW                                   *symbols-tips-preview-window*
+PREVIEW WINDOW                                   *sybmols-tips-preview-window*
 
 Press the preview window keymap (by default "K") once to open it, the second
 time to jump to it. You can now move around the buffer and make changes. Press
@@ -61,19 +63,19 @@ time to jump to it. You can now move around the buffer and make changes. Press
 means that by default you can’t record macros in the preview window.
 
 
-KEYMAPS                                                 *symbols-tips-keymaps*
+KEYMAPS                                                 *sybmols-tips-keymaps*
 
 How to remove a default keymap? Just set the value to `nil`.
 
 
-DYNAMIC SETTINGS                               *symbols-tips-dynamic-settings*
+DYNAMIC SETTINGS                               *sybmols-tips-dynamic-settings*
 
 A lot of settings can be changed on the fly by using keymaps starting with "t".
 For example, try out "td" to toggle inline details, "t=" to toggle sidebar auto
 resizing or "tp" to toggle auto preview.
 
 
-INLINE DETAILS                                   *symbols-tips-inline-details*
+INLINE DETAILS                                   *sybmols-tips-inline-details*
 
 By pressing "td" you can show inline details which are provided by some LSP
 servers. They give useful information about certain symbols. For instance, for
@@ -83,7 +85,7 @@ Lua, Go and Rust. On the flip side, Javascript and Python do not show any
 details.
 
 
-NAVIGATION                                           *symbols-tips-navigation*
+NAVIGATION                                           *sybmols-tips-navigation*
 
 Sometimes you want to get to a deeply nested symbol and unfold all the symbols
 on the way. To do that for the symbol under the cursor in the source window
@@ -101,7 +103,7 @@ You can navigate the sidebar with a mouse. Left click to select a symbol,
 double click to toggle fold, right click to peek the symbol.
 
 
-BIG FILES                                             *symbols-tips-big-files*
+BIG FILES                                             *sybmols-tips-big-files*
 
 To work with really big files in Neovim you have to turn off LSPs, treesitter
 and more. You can do that with some custom lua code or use a plugin like:
@@ -118,7 +120,7 @@ What if you notice slow downs while working on a file of reasonable size?
 
 
 ==============================================================================
-3. Commands                                                 *symbols-commands*
+3. Commands                                                 *sybmols-commands*
 
 - `:Symbols[!]` A command designed to be used as your main mapping. Opens the
     Symbols sidebar and jumps to it unless called with the bang (`!`). If called
@@ -132,7 +134,7 @@ What if you notice slow downs while working on a file of reasonable size?
 
 
 ==============================================================================
-4. Configuration                                       *symbols-configuration*
+4. Configuration                                       *sybmols-configuration*
 
 To use the plugin you must run the setup function:
 `require("symbols").setup()`. Setup function takes any number of config
@@ -150,7 +152,7 @@ There are a few predefined recipes (configs) that you can use:
 The recipes are available in `symbols.recipes` module.
 
 
-REFERENCE                                    *symbols-configuration-reference*
+REFERENCE                                    *sybmols-configuration-reference*
 
 Default config below.
 
@@ -383,7 +385,7 @@ Default config below.
 
 
 ==============================================================================
-5. Alternatives                                         *symbols-alternatives*
+5. Alternatives                                         *sybmols-alternatives*
 
 - aerial.nvim <https://github.com/stevearc/aerial.nvim>
 - outline.nvim <https://github.com/hedyhli/outline.nvim>
