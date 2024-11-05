@@ -196,6 +196,8 @@ Default config below.
             -- When enabled every symbol will be automatically peeked after cursor
             -- movement.
             auto_peek = false,
+            -- Whether to close the sidebar on goto symbol.
+            close_on_goto = false,
             -- Whether the sidebar should wrap text.
             wrap = false,
             -- Whether to show the guide lines.
@@ -299,6 +301,8 @@ Default config below.
                 ["tf"] = "toggle-cursor-follow",
                 -- Toggles automatic peeking on cursor movement (see sidebar.auto_peek).
                 ["to"] = "toggle-auto-peek",
+                -- Toggles closing on goto symbol (see sidebar.close_on_goto).
+                ["tg"] = "toggle-close-on-goto",
                 -- Toggles automatic sidebar resizing (see sidebar.auto_resize).
                 ["t="] = "toggle-auto-resize",
     

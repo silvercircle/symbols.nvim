@@ -555,6 +555,7 @@ local TreesitterProvider = {
 }
 
 ---@class Preview
+---@field sidebar Sidebar
 ---@field win integer
 ---@field locked boolean
 ---@field auto_show boolean
@@ -565,6 +566,7 @@ local TreesitterProvider = {
 ---@return Preview
 local function preview_new_obj()
     return {
+        sidebar = nil,
         win = -1,
         locked = false,
         auto_show = cfg.default.sidebar.preview.show_always,
@@ -596,12 +598,17 @@ local function preview_close(preview)
     preview.source_buf = -1
 end
 
+local sidebar_close
+
 ---@param preview Preview
 local function preview_goto_symbol(preview)
     local cursor = vim.api.nvim_win_get_cursor(preview.win)
     vim.api.nvim_win_set_cursor(preview.source_win, cursor)
     vim.api.nvim_set_current_win(preview.source_win)
     vim.fn.win_execute(preview.source_win, "normal! zz")
+    if preview.sidebar.close_on_goto then
+        sidebar_close(preview.sidebar)
+    end
 end
 
 ---@type table<PreviewAction, fun(preview: Preview)>
@@ -1262,6 +1269,7 @@ end
 ---@field symbol_filter SymbolFilter
 ---@field cursor_follow boolean
 ---@field auto_peek boolean
+---@field close_on_goto boolean
 
 ---@return Sidebar
 local function sidebar_new_obj()
@@ -1546,7 +1554,7 @@ local function sidebar_win_restore(sidebar)
     vim.cmd("wincmd =")
 end
 
-local function sidebar_close(sidebar)
+sidebar_close = function(sidebar)
     if not sidebar_visible(sidebar) then return end
     sidebar_preview_close(sidebar)
     details_close(sidebar.details)
@@ -1943,9 +1951,8 @@ local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
     vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
 end
 
-
 ---@param sidebar Sidebar
-local function sidebar_goto_symbol(sidebar)
+local function _sidebar_goto_symbol(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
     vim.api.nvim_set_current_win(sidebar.source_win)
     vim.api.nvim_win_set_cursor(
@@ -1954,6 +1961,12 @@ local function sidebar_goto_symbol(sidebar)
     )
     vim.fn.win_execute(sidebar.source_win, "normal! zz")
     flash_highlight_under_cursor(sidebar.source_win, 400, 1)
+end
+
+---@param sidebar Sidebar
+local function sidebar_goto_symbol(sidebar)
+    _sidebar_goto_symbol(sidebar)
+    if sidebar.close_on_goto then sidebar_close(sidebar) end
 end
 
 ---@param sidebar Sidebar
@@ -2004,7 +2017,7 @@ local function sidebar_peek(sidebar)
     if reopen_details then details_close(sidebar.details) end
     local reopen_preview = sidebar.preview.win ~= -1
     if reopen_preview then preview_close(sidebar.preview) end
-    sidebar_goto_symbol(sidebar)
+    _sidebar_goto_symbol(sidebar)
     vim.api.nvim_set_current_win(sidebar.win)
     if reopen_details then details_open(sidebar.details, _sidebar_details_open_params(sidebar)()) end
     if reopen_preview then sidebar_preview_open(sidebar) end
@@ -2240,6 +2253,11 @@ local function sidebar_toggle_auto_peek(sidebar)
 end
 
 ---@param sidebar Sidebar
+local function sidebar_toggle_close_on_goto(sidebar)
+    sidebar.close_on_goto = not sidebar.close_on_goto
+end
+
+---@param sidebar Sidebar
 local function sidebar_toggle_auto_resize(sidebar)
     sidebar.auto_resize.enabled = not sidebar.auto_resize.enabled
 end
@@ -2269,6 +2287,7 @@ local help_options_order = {
     "toggle-cursor-hiding",
     "toggle-cursor-follow",
     "toggle-auto-peek",
+    "toggle-close-on-goto",
     "toggle-auto-resize",
     "help",
     "close",
@@ -2385,6 +2404,7 @@ local sidebar_actions = {
     ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
     ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
     ["toggle-auto-peek"] = sidebar_toggle_auto_peek,
+    ["toggle-close-on-goto"] = sidebar_toggle_close_on_goto,
     ["toggle-auto-resize"] = sidebar_toggle_auto_resize,
 
     ["help"] = sidebar_help,
@@ -2426,8 +2446,11 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.symbols_retriever = symbols_retriever
 
     sidebar.gs = gs
+
     sidebar.preview_config = config.preview
     sidebar.preview.auto_show = config.preview.show_always
+    sidebar.preview.sidebar = sidebar
+
     sidebar.show_inline_details = config.show_inline_details
     sidebar.details.auto_show = config.show_details_pop_up
     sidebar.show_guide_lines = config.show_guide_lines
@@ -2439,6 +2462,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.symbol_filter = config.symbol_filter
     sidebar.cursor_follow = config.cursor_follow
     sidebar.auto_peek = config.auto_peek
+    sidebar.close_on_goto = config.close_on_goto
 
     sidebar.details.show_debug_info = debug
 

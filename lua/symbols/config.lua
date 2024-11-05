@@ -33,6 +33,7 @@ M.SidebarAction = {
     ToggleCursorFollow = "toggle-cursor-follow",
     ToggleAutoResize = "toggle-auto-resize",
     ToggleAutoPeek = "toggle-auto-peek",
+    ToggleCloseOnGoto = "toggle-close-on-goto",
     Help = "help",
     Close = "close",
 }
@@ -92,6 +93,7 @@ M.OpenDirection = {
 ---@field show_details_pop_up boolean
 ---@field show_guide_lines boolean
 ---@field auto_peek boolean
+---@field close_on_goto boolean
 ---@field wrap boolean
 ---@field chars CharConfig
 ---@field preview PreviewConfig
@@ -149,6 +151,7 @@ M.default = {
         show_details_pop_up = false,
         show_guide_lines = false,
         auto_peek = false,
+        close_on_goto = false,
         wrap = false,
         chars = {
             folded = "",
@@ -203,6 +206,7 @@ M.default = {
             ["tc"] = "toggle-cursor-hiding",
             ["tf"] = "toggle-cursor-follow",
             ["to"] = "toggle-auto-peek",
+            ["tg"] = "toggle-close-on-goto",
             ["t="] = "toggle-auto-resize",
 
             ["<2-LeftMouse>"] = "toggle-fold",
