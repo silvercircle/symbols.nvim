@@ -4,6 +4,17 @@ local M = {}
 
 local MAX_INT = 2147483647
 
+---@param tbl table
+---@return table
+local function reverse_map(tbl)
+    local rev = {}
+    for k, v in pairs(tbl) do
+        assert(rev[v] == nil, "to reverse a map values must be unique")
+        rev[v] = k
+    end
+    return rev
+end
+
 ---@type table<string, boolean>
 local cmds = {}
 
@@ -36,6 +47,19 @@ local LOG_LEVEL_STRING = {
     [vim.log.levels.DEBUG] = "DEBUG",
     [vim.log.levels.TRACE] = "TRACE",
 }
+
+---@type table<integer, string>
+local LOG_LEVEL_CMD_STRING = {
+    [vim.log.levels.ERROR] = "error",
+    [vim.log.levels.WARN] = "warning",
+    [vim.log.levels.INFO] = "info",
+    [vim.log.levels.DEBUG] = "debug",
+    [vim.log.levels.TRACE] = "trace",
+    [vim.log.levels.OFF] = "off",
+}
+
+---@type table<string, integer>
+local CMD_STRING_LOG_LEVEL = reverse_map(LOG_LEVEL_CMD_STRING)
 
 ---@param msg string
 ---@param level any
@@ -70,21 +94,12 @@ local log = {
 ---@param name string
 ---@param desc string
 local function create_change_log_level_user_command(name, desc)
-    local string_to_log_level = {
-        error = vim.log.levels.ERROR,
-        warning = vim.log.levels.WARN,
-        info = vim.log.levels.INFO,
-        debug = vim.log.levels.DEBUG,
-        trace = vim.log.levels.TRACE,
-        off = vim.log.levels.off,
-    }
-    local log_levels = vim.tbl_keys(string_to_log_level)
-
+    local log_levels = vim.tbl_keys(CMD_STRING_LOG_LEVEL)
     create_user_command(
         name,
         function(e)
             local arg = e.fargs[1]
-            local new_log_level = string_to_log_level[arg]
+            local new_log_level = CMD_STRING_LOG_LEVEL[arg]
             if new_log_level == nil then
                 log.error("Invalid log level: " .. arg)
             else
@@ -323,11 +338,7 @@ local LspSymbolKind = {
 }
 
 ---@type table<LspSymbolKind, string>
-local LspSymbolKindString = {}
-for k, v in pairs(LspSymbolKind) do
-    LspSymbolKindString[v] = k
-end
-
+local LspSymbolKindString = reverse_map(LspSymbolKind)
 
 ---@param lsp_symbol any
 ---@param parent Symbol?
@@ -2647,6 +2658,8 @@ local function setup_dev(gs, sidebars, config)
 
         unload_package("symbols")
         require("symbols").setup(config)
+
+        vim.cmd("SymbolsLogLevel " .. LOG_LEVEL_CMD_STRING[LOG_LEVEL])
 
         log.info("symbols.nvim reloaded")
     end
