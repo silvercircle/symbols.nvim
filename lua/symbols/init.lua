@@ -1951,6 +1951,41 @@ local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
     vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
 end
 
+---@param win integer
+---@param setting string
+---@param value any
+local function sidebar_show_toggle_notification(win, setting, value)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_option_value("bufhidden", "delete", { buf = buf })
+
+    if type(value) == "boolean" then
+        value = (value and "on") or "off"
+    end
+
+    local text =  " " .. setting .. ": " .. tostring(value)
+    local lines = { text }
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+    local win_h = vim.api.nvim_win_get_height(win)
+    local win_w = vim.api.nvim_win_get_width(win)
+    local opts = {
+        height = 1,
+        width = win_w,
+        border = "none",
+        style = "minimal",
+        relative = "win",
+        win = win,
+        anchor = "NW",
+        row = win_h-2,
+        col = 0,
+    }
+    local fw = vim.api.nvim_open_win(buf, false, opts)
+    vim.defer_fn(
+        function() vim.api.nvim_win_close(fw, true) end,
+        1500
+    )
+end
+
 ---@param sidebar Sidebar
 local function _sidebar_goto_symbol(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
@@ -2220,15 +2255,18 @@ end
 local function sidebar_toggle_details(sidebar)
     sidebar.show_inline_details = not sidebar.show_inline_details
     sidebar_refresh_view(sidebar)
+    sidebar_show_toggle_notification(sidebar.win, "inline details", sidebar.show_inline_details)
 end
 
 local function sidebar_toggle_auto_details(sidebar)
     details_toggle_auto_show(sidebar.details, _sidebar_details_open_params(sidebar))
+    sidebar_show_toggle_notification(sidebar.win, "auto details win", sidebar.details.auto_show)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_preview(sidebar)
     preview_toggle_auto_show(sidebar.preview, _sidebar_preview_open_params(sidebar))
+    sidebar_show_toggle_notification(sidebar.win, "auto preview win", sidebar.preview.auto_show)
 end
 
 ---@param sidebar Sidebar
@@ -2240,26 +2278,31 @@ local function sidebar_toggle_cursor_hiding(sidebar)
         hide_cursor(cursor)
     end
     cursor.hide = not cursor.hide
+    sidebar_show_toggle_notification(sidebar.win, "cursor hiding", cursor.hide)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_cursor_follow(sidebar)
     sidebar.cursor_follow = not sidebar.cursor_follow
+    sidebar_show_toggle_notification(sidebar.win, "cursor follow", sidebar.cursor_follow)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_peek(sidebar)
     sidebar.auto_peek = not sidebar.auto_peek
+    sidebar_show_toggle_notification(sidebar.win, "auto peek", sidebar.auto_peek)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_close_on_goto(sidebar)
     sidebar.close_on_goto = not sidebar.close_on_goto
+    sidebar_show_toggle_notification(sidebar.win, "close on goto", sidebar.close_on_goto)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_resize(sidebar)
     sidebar.auto_resize.enabled = not sidebar.auto_resize.enabled
+    sidebar_show_toggle_notification(sidebar.win, "auto resize", sidebar.auto_resize.enabled)
 end
 
 ---@type SidebarAction[]
