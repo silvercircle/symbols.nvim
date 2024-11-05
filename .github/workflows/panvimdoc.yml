@@ -1,5 +1,6 @@
 name: panvimdoc
 on:
+  workflow_dispatch:
   push:
     paths:
       - "README.md"
@@ -12,7 +13,7 @@ jobs:
       - name: panvimdoc
         uses: kdheepak/panvimdoc@main
         with:
-          vimdoc: sybmols
+          vimdoc: symbols
           version: "NVIM v0.10.0"
       - name: Strip header
         run: sed "1,2d" -i doc/symbols.txt
