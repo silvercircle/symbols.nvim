@@ -270,7 +270,15 @@ M.default = {
                     H3 = "@markup.heading.3.vimdoc",
                     Tag = "@label.vimdoc",
                 },
-                default = {}
+                json = {
+                    Object = "Type",
+                    Array = "Constant",
+                    String = "String",
+                    Number = "Number",
+                    Boolean = "Boolean",
+                    Null = "Type",
+                },
+                default = {},
             }
         },
     },

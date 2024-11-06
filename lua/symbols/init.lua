@@ -535,6 +535,132 @@ local function markdown_get_symbols(cache, _)
     return true, root
 end
 
+---@param cache table
+---@param buf integer
+---@return boolean, Symbol?
+local function json_get_symbols(cache, buf)
+    local ts_type_kind = {
+        ["object"] = "Object",
+        ["array"] = "Array",
+        ["true"] = "Boolean",
+        ["false"] = "Boolean",
+        ["string"] = "String",
+        ["number"] = "Number",
+        ["null"] = "Null",
+    }
+
+    ---@param ts_node any
+    ---@return Range
+    local function symbol_range_for_ts_node(ts_node)
+        local sline, scol, eline, ecol = ts_node:range()
+        return {
+            start = { line = sline, character = scol },
+            ["end"] = { line = eline, character = ecol },
+        }
+    end
+
+    ---@param ts_node any
+    ---@return string
+    local function get_node_text(ts_node)
+        local sline, scol, eline, ecol = ts_node:range()
+        return vim.api.nvim_buf_get_text(buf, sline, scol, eline, ecol, {})[1]
+    end
+
+    ---@return string
+    local function get_detail(kind, ts_node)
+        if kind == "Object" then
+            return ""
+        elseif kind == "Array" then
+            return ""
+        elseif kind == "Boolean" then
+            return ts_node:type()
+        elseif kind == "String" then
+            return string.sub(get_node_text(ts_node), 2, -2)
+        elseif kind == "Number" then
+            return get_node_text(ts_node)
+        elseif kind == "Null" then
+            return "null"
+        end
+        assert(false, "unexpected kind: " .. tostring(kind))
+        return ""
+    end
+
+    local walk_array
+
+    ---@param node Symbol
+    ---@param ts_node any
+    local function walk_object(node, ts_node)
+        for ts_child in ts_node:iter_children() do
+            if ts_child:named() then
+                local key_node = ts_child:child(0)
+                local value_node = ts_child:child(2)
+                local kind = ts_type_kind[value_node:type()]
+                ---@type Symbol
+                local new_symbol = {
+                    kind = kind,
+                    name = string.sub(get_node_text(key_node), 2, -2),
+                    detail = get_detail(kind, value_node),
+                    level = node.level + 1,
+                    parent = node,
+                    children = {},
+                    range = symbol_range_for_ts_node(ts_child),
+                    selectionRange = symbol_range_for_ts_node(ts_child),
+                }
+                table.insert(node.children, new_symbol)
+                if kind == "Array" then
+                    walk_array(new_symbol, value_node)
+                elseif kind == "Object" then
+                    walk_object(new_symbol, value_node)
+                end
+            end
+        end
+    end
+
+    ---@param node Symbol
+    ---@param ts_node any
+    walk_array = function(node, ts_node)
+        local array_index = 0
+        for ts_child in ts_node:iter_children() do
+            if ts_child:named() then
+                local kind = ts_type_kind[ts_child:type()]
+                ---@type Symbol
+                local new_symbol = {
+                    kind = kind,
+                    name = tostring(array_index),
+                    detail = get_detail(kind, ts_child),
+                    level = node.level + 1,
+                    parent = node,
+                    children = {},
+                    range = symbol_range_for_ts_node(ts_child),
+                    selectionRange = symbol_range_for_ts_node(ts_child),
+                }
+                table.insert(node.children, new_symbol)
+                if kind == "Array" then
+                    walk_array(new_symbol, ts_child)
+                elseif kind == "Object" then
+                    walk_object(new_symbol, ts_child)
+                end
+                array_index = array_index + 1
+            end
+        end
+    end
+
+    local root = Symbol_root()
+    local ts_root = cache.parser:parse()[1]:root()
+
+    local single_top_level_obj = ts_root:child_count() == 1 and ts_root:named_child_count() > 0
+    if single_top_level_obj then root.level = root.level - 1 end
+
+    walk_array(root, ts_root)
+
+    if single_top_level_obj then
+        root.level = root.level + 1
+        root.children = root.children[1].children
+    end
+
+    return true, root
+end
+
 ---@type Provider
 local TreesitterProvider = {
     name = "treesitter",
@@ -542,6 +668,7 @@ local TreesitterProvider = {
         local ft_to_parser_name = {
             help = "vimdoc",
             markdown = "markdown",
+            json = "json",
         }
         local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
         local parser_name = ft_to_parser_name[ft]
@@ -558,6 +685,7 @@ local TreesitterProvider = {
         local get_symbols_funs = {
             help = vimdoc_get_symbols,
             markdown = markdown_get_symbols,
+            json = json_get_symbols,
         }
         local get_symbols = get_symbols_funs[cache.ft]
         assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(cache.ft))
@@ -1635,6 +1763,9 @@ local function get_line_for_each_symbol(symbols)
     end
 
     get_lines(symbols.root, 1)
+    for symbol, line in pairs(lines) do
+        vim.print(symbol.name, line)
+    end
 
     return lines
 end
@@ -1724,6 +1855,7 @@ end
 local function move_cursor_to_symbol(sidebar, symbol)
     assert(vim.api.nvim_win_is_valid(sidebar.win))
     local line = sidebar.lines[symbol]
+    vim.print("moving cursor to: " .. vim.inspect(Symbol_path(symbol)))
     vim.api.nvim_win_set_cursor(sidebar.win, { line, 0 })
 end
 

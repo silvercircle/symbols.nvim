@@ -249,6 +249,14 @@ M.AsciiSymbols = {
                     H5 = "",
                     H6 = "",
                 },
+                json = {
+                    Object = "{}",
+                    Array = "[]",
+                    String = " \"",
+                    Number = " #",
+                    Boolean = " b",
+                    Null = " ?",
+                },
             }
         }
     }
