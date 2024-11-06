@@ -304,7 +304,7 @@ end
 ---@field name string
 ---@field init (fun(cache: table, config: table)) | nil
 ---@field supports fun(cache: table, buf: integer): boolean
----@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: fun(root: Symbol), on_fail: fun())) | nil
+---@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: fun(root: Symbol), on_fail: fun(), on_timeout: fun())) | nil
 ---@field get_symbols ProviderGetSymbols | nil
 
 ---@enum LspSymbolKind
@@ -365,7 +365,7 @@ local LspProvider = {
         cache.client = clients[1]
         return #clients > 0
     end,
-    async_get_symbols = function(cache, buf, refresh_symbols, on_fail)
+    async_get_symbols = function(cache, buf, refresh_symbols, on_fail, on_timeout)
         local got_symbols = false
 
         ---@param sym1 Symbol
@@ -409,7 +409,7 @@ local LspProvider = {
             function()
                 if got_symbols then return end
                 cache.client.cancel_request(request_id)
-                on_fail()
+                on_timeout()
             end,
             cache.request_timeout
         )
@@ -1226,16 +1226,30 @@ end
 ---@param buf integer
 ---@param on_retrieve fun(symbol: Symbol, provider_name: string, provider_config: table)
 ---@param on_fail fun(provider_name: string)
+---@param on_timeout fun(provider_name: string)
 ---@return boolean
-local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
+local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, on_timeout)
+    local function cleanup_on_fail()
+        local entry = retriever.cache[buf]
+        entry.update_in_progress = false
+        entry.post_update_callbacks = {}
+    end
+
     ---@param provider Provider
     local function _on_fail(provider)
         return function()
-            local entry = retriever.cache[buf]
-            entry.update_in_progress = false
-            entry.post_update_callbacks = {}
+            cleanup_on_fail()
             log.warn(provider.name .. " failed")
             on_fail(provider.name)
+        end
+    end
+
+    ---@param provider Provider
+    local function _on_timeout(provider)
+        return function()
+            cleanup_on_fail()
+            log.warn(provider.name .. " timed out")
+            on_timeout(provider.name)
         end
     end
 
@@ -1296,7 +1310,8 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail)
                     cache,
                     buf,
                     _on_retrieve(provider.name, false),
-                    _on_fail(provider)
+                    _on_fail(provider),
+                    _on_timeout(provider)
                 )
             else
                 local ok, symbol = provider.get_symbols(cache, buf)
@@ -1985,8 +2000,20 @@ local function sidebar_refresh_symbols(sidebar)
         sidebar_refresh_size(sidebar, lines)
     end
 
+    ---@param provider_name string
+    local function on_timeout(provider_name)
+        local lines = {
+            "", " [symbols.nvim]", "", " " .. provider_name .. " provider timed out",
+            "", " Try again or increase", " timeout in config."
+        }
+        buf_set_content(sidebar.buf, lines)
+        sidebar_refresh_size(sidebar, lines)
+    end
+
     local buf = sidebar_source_win_buf(sidebar)
-    local ok = SymbolsRetriever_retrieve(sidebar.symbols_retriever, buf, _refresh_sidebar, on_fail)
+    local ok = SymbolsRetriever_retrieve(
+        sidebar.symbols_retriever, buf, _refresh_sidebar, on_fail, on_timeout
+    )
     if not ok then
         local ft = vim.bo[sidebar_source_win_buf(sidebar)].ft
         local lines
