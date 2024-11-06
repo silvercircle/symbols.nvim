@@ -669,6 +669,7 @@ local TreesitterProvider = {
             help = "vimdoc",
             markdown = "markdown",
             json = "json",
+            jsonl = "json"
         }
         local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
         local parser_name = ft_to_parser_name[ft]
@@ -686,6 +687,7 @@ local TreesitterProvider = {
             help = vimdoc_get_symbols,
             markdown = markdown_get_symbols,
             json = json_get_symbols,
+            jsonl = json_get_symbols,
         }
         local get_symbols = get_symbols_funs[cache.ft]
         assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(cache.ft))

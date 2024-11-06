@@ -278,6 +278,14 @@ M.default = {
                     Boolean = "Boolean",
                     Null = "Type",
                 },
+                jsonl = {
+                    Object = "Type",
+                    Array = "Constant",
+                    String = "String",
+                    Number = "Number",
+                    Boolean = "Boolean",
+                    Null = "Type",
+                },
                 default = {},
             }
         },

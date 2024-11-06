@@ -257,6 +257,14 @@ M.AsciiSymbols = {
                     Boolean = " b",
                     Null = " ?",
                 },
+                jsonl = {
+                    Object = "{}",
+                    Array = "[]",
+                    String = " \"",
+                    Number = " #",
+                    Boolean = " b",
+                    Null = " ?",
+                },
             }
         }
     }
@@ -313,6 +321,22 @@ M.FancySymbols = {
                     H4 = "",
                     H5 = "",
                     H6 = "",
+                },
+                json = {
+                    Object = "󰆧",
+                    Array = "󰅪",
+                    String = "𝓐",
+                    Number = "#",
+                    Boolean = "⊨",
+                    Null = "?",
+                },
+                jsonl = {
+                    Object = "󰆧",
+                    Array = "󰅪",
+                    String = "𝓐",
+                    Number = "#",
+                    Boolean = "⊨",
+                    Null = "?",
                 },
                 default = {},
             }

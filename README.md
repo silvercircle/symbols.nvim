@@ -323,54 +323,15 @@ Default config below.
             details = {},
             kinds = { default = {} },
             highlights = {
-                default = {
-                    File = "Identifier",
-                    Module = "Include",
-                    Namespace = "Include",
-                    Package = "Include",
-                    Class = "Type",
-                    Method = "Function",
-                    Property = "Identifier",
-                    Field = "Identifier",
-                    Constructor = "Special",
-                    Enum = "Type",
-                    Interface = "Type",
-                    Function = "Function",
-                    Variable = "Constant",
-                    Constant = "Constant",
-                    String = "String",
-                    Number = "Number",
-                    Boolean = "Boolean",
-                    Array = "Constant",
-                    Object = "Type",
-                    Key = "Type",
-                    Null = "Type",
-                    EnumMember = "Identifier",
-                    Struct = "Structure",
-                    Event = "Type",
-                    Operator = "Identifier",
-                    TypeParameter = "Identifier",
-                }
+                ...
+                default = { }
             },
         },
         treesitter = {
             details = {},
             kinds = { default = {} },
             highlights = {
-                markdown = {
-                    H1 = "@markup.heading.1.markdown",
-                    H2 = "@markup.heading.2.markdown",
-                    H3 = "@markup.heading.3.markdown",
-                    H4 = "@markup.heading.4.markdown",
-                    H5 = "@markup.heading.5.markdown",
-                    H6 = "@markup.heading.6.markdown",
-                },
-                help = {
-                    H1 = "@markup.heading.1.vimdoc",
-                    H2 = "@markup.heading.2.vimdoc",
-                    H3 = "@markup.heading.3.vimdoc",
-                    Tag = "@label.vimdoc",
-                },
+                ...
                 default = {}
             }
         },
