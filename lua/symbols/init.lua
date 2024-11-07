@@ -1139,6 +1139,7 @@ end
 ---@field buf integer
 ---@field root Symbol
 ---@field states SymbolStates
+---@field any_nesting boolean
 
 ---@return Symbols
 local function Symbols_new()
@@ -1150,6 +1151,7 @@ local function Symbols_new()
         states = {
             [root] = SymbolState_new()
         },
+        any_nesting = false,
     }
     symbols.states[root].folded = false
     return symbols
@@ -1159,6 +1161,7 @@ end
 ---@param symbol_filter SymbolFilter
 local function Symbols_apply_filter(symbols, symbol_filter)
     local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
+    symbols.any_nesting = false
 
     ---@param symbol Symbol
     local function apply(symbol)
@@ -1174,6 +1177,10 @@ local function Symbols_apply_filter(symbols, symbol_filter)
             if symbols.states[child].visible then
                 state.visible_children = state.visible_children + 1
             end
+        end
+
+        if state.visible_children > 0 and symbol.level == 1 then
+            symbols.any_nesting = true
         end
 
     end
@@ -1385,11 +1392,23 @@ local function WinSettings_apply(win, settings)
 end
 
 ---@param cursor CursorState
-local function hide_cursor(cursor)
+local function activate_cursorline(cursor)
     if not cursor.hidden then
         local cur = vim.o.guicursor:match("n.-:(.-)[-,]")
         vim.opt.guicursor:append("n:" .. cur .. "-Cursorline")
         cursor.hidden = true
+    end
+end
+
+local sidebar_current_symbols
+
+---@param sidebar Sidebar
+local function hide_cursor(sidebar)
+    local pos = vim.api.nvim_win_get_cursor(sidebar.win)
+    local any_nesting = sidebar_current_symbols(sidebar).any_nesting
+    local col = (any_nesting and 1) or 0
+    if col ~= pos[2] then
+        vim.api.nvim_win_set_cursor(sidebar.win, { pos[1], col })
     end
 end
 
@@ -1539,7 +1558,7 @@ end
 
 ---@param sidebar Sidebar
 ---@return Symbols
-local function sidebar_current_symbols(sidebar)
+ sidebar_current_symbols = function(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
     assert(source_buf ~= -1)
     local symbols = sidebar.buf_symbols[source_buf]
@@ -2447,7 +2466,7 @@ local function sidebar_toggle_cursor_hiding(sidebar)
     if cursor.hide then
         reset_cursor(cursor)
     else
-        hide_cursor(cursor)
+        activate_cursorline(cursor)
     end
     cursor.hide = not cursor.hide
     sidebar_show_toggle_notification(sidebar.win, "cursor hiding", cursor.hide)
@@ -2765,6 +2784,9 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
             callback = function()
                 preview_on_win_enter(sidebar.preview)
                 details_on_win_enter(sidebar.details, _sidebar_details_open_params(sidebar))
+                if vim.api.nvim_get_current_win() == sidebar.win and sidebar.gs.cursor.hide then
+                    hide_cursor(sidebar)
+                end
             end,
         }
     )
@@ -3023,7 +3045,7 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
                     local win = vim.api.nvim_get_current_win()
                     for _, sidebar in ipairs(sidebars) do
                         if sidebar.win == win then
-                            hide_cursor(gs.cursor)
+                            activate_cursorline(gs.cursor)
                             return
                         end
                     end
