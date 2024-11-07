@@ -1422,6 +1422,7 @@ end
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field keymaps KeymapsConfig
+---@field symbol_filters_enabled boolean
 ---@field symbol_filter SymbolFilter
 ---@field cursor_follow boolean
 ---@field auto_peek boolean
@@ -1453,6 +1454,7 @@ local function sidebar_new_obj()
         fixed_width = config.fixed_width,
         keymaps = config.keymaps,
         symbol_state = {},
+        symbol_filters_enabled = true,
         symbol_filter = config.symbol_filter,
         cursor_follow = config.cursor_follow,
         auto_peek = config.auto_peek,
@@ -1986,7 +1988,9 @@ local function sidebar_refresh_symbols(sidebar)
         new_symbols.root = new_root
         new_symbols.states = SymbolStates_build(new_root)
         preserve_folds(current_symbols, new_symbols)
-        Symbols_apply_filter(new_symbols, sidebar.symbol_filter)
+        local symbols_filter = (sidebar.symbol_filters_enabled and sidebar.symbol_filter)
+            or function(_, _) return true end
+        Symbols_apply_filter(new_symbols, symbols_filter)
         sidebar_replace_current_symbols(sidebar, new_symbols)
         sidebar_refresh_view(sidebar)
     end
@@ -2456,6 +2460,13 @@ local function sidebar_toggle_cursor_follow(sidebar)
 end
 
 ---@param sidebar Sidebar
+local function sidebar_toggle_filters(sidebar)
+    sidebar.symbol_filters_enabled = not sidebar.symbol_filters_enabled
+    sidebar_refresh_symbols(sidebar)
+    sidebar_show_toggle_notification(sidebar.win, "symbol filters", sidebar.symbol_filters_enabled)
+end
+
+---@param sidebar Sidebar
 local function sidebar_toggle_auto_peek(sidebar)
     sidebar.auto_peek = not sidebar.auto_peek
     sidebar_show_toggle_notification(sidebar.win, "auto peek", sidebar.auto_peek)
@@ -2513,6 +2524,7 @@ local help_options_order = {
     "toggle-auto-preview",
     "toggle-cursor-hiding",
     "toggle-cursor-follow",
+    "toggle-filters",
     "toggle-auto-peek",
     "toggle-close-on-goto",
     "toggle-auto-resize",
@@ -2632,6 +2644,7 @@ local sidebar_actions = {
     ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
     ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
     ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
+    ["toggle-filters"] = sidebar_toggle_filters,
     ["toggle-auto-peek"] = sidebar_toggle_auto_peek,
     ["toggle-close-on-goto"] = sidebar_toggle_close_on_goto,
     ["toggle-auto-resize"] = sidebar_toggle_auto_resize,
@@ -2690,6 +2703,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.wrap = config.wrap
     sidebar.auto_resize = vim.deepcopy(config.auto_resize, true)
     sidebar.fixed_width = config.fixed_width
+    sidebar.symbol_filters_enabled = true
     sidebar.symbol_filter = config.symbol_filter
     sidebar.cursor_follow = config.cursor_follow
     sidebar.auto_peek = config.auto_peek

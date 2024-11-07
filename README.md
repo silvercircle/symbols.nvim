@@ -296,9 +296,12 @@ Default config below.
             -- Toggles auto preview floating window.
             ["tp"] = "toggle-auto-preview",
             -- Toggles cursor hiding (see sidebar.auto_resize.
-            ["tc"] = "toggle-cursor-hiding",
+            ["tch"] = "toggle-cursor-hiding",
             -- Toggles cursor following (see sidebar.cursor_follow).
-            ["tf"] = "toggle-cursor-follow",
+            ["tcf"] = "toggle-cursor-follow",
+            -- Toggles symbol filters allowing the user to see all the symbols
+            -- given by the provider.
+            ["tf"] = "toggle-filters",
             -- Toggles automatic peeking on cursor movement (see sidebar.auto_peek).
             ["to"] = "toggle-auto-peek",
             -- Toggles closing on goto symbol (see sidebar.close_on_goto).
