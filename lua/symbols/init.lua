@@ -1780,9 +1780,6 @@ local function get_line_for_each_symbol(symbols)
     end
 
     get_lines(symbols.root, 1)
-    for symbol, line in pairs(lines) do
-        vim.print(symbol.name, line)
-    end
 
     return lines
 end
@@ -1872,7 +1869,6 @@ end
 local function move_cursor_to_symbol(sidebar, symbol)
     assert(vim.api.nvim_win_is_valid(sidebar.win))
     local line = sidebar.lines[symbol]
-    vim.print("moving cursor to: " .. vim.inspect(Symbol_path(symbol)))
     vim.api.nvim_win_set_cursor(sidebar.win, { line, 0 })
 end
 
