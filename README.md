@@ -305,6 +305,10 @@ Default config below.
             ["tg"] = "toggle-close-on-goto",
             -- Toggles automatic sidebar resizing (see sidebar.auto_resize).
             ["t="] = "toggle-auto-resize",
+            -- Decrease auto resize max width by 5. Works with a count.
+            ["t["] = "decrease-max-width",
+            -- Increase auto resize max width by 5. Works with a count.
+            ["t]"] = "increase-max-width",
 
             -- Toggle fold of the symbol under the cursor.
             ["<2-LeftMouse>"] = "toggle-fold",

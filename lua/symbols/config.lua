@@ -34,6 +34,8 @@ M.SidebarAction = {
     ToggleAutoResize = "toggle-auto-resize",
     ToggleAutoPeek = "toggle-auto-peek",
     ToggleCloseOnGoto = "toggle-close-on-goto",
+    DecreaseMaxWidth = "decrease-max-width",
+    IncreaseMaxWidth = "increase-max-width",
     Help = "help",
     Close = "close",
 }
@@ -208,6 +210,8 @@ M.default = {
             ["to"] = "toggle-auto-peek",
             ["tg"] = "toggle-close-on-goto",
             ["t="] = "toggle-auto-resize",
+            ["t["] = "decrease-max-width",
+            ["t]"] = "increase-max-width",
 
             ["<2-LeftMouse>"] = "toggle-fold",
 

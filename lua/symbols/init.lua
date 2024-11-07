@@ -2477,6 +2477,22 @@ local function sidebar_toggle_auto_resize(sidebar)
     sidebar_show_toggle_notification(sidebar.win, "auto resize", sidebar.auto_resize.enabled)
 end
 
+---@param sidebar Sidebar
+local function sidebar_decrease_max_width(sidebar)
+    local count = 5 * ((vim.v.count == 0 and 1) or vim.v.count)
+    vim.cmd("vert resize -" .. tostring(count))
+    sidebar.auto_resize.max_width = sidebar.auto_resize.max_width - count
+    sidebar_refresh_size(sidebar, nil)
+end
+
+---@param sidebar Sidebar
+local function sidebar_increase_max_width(sidebar)
+    local count = 5 * ((vim.v.count == 0 and 1) or vim.v.count)
+    vim.cmd("vert resize " .. tostring(count))
+    sidebar.auto_resize.max_width = sidebar.auto_resize.max_width + count
+    sidebar_refresh_size(sidebar, nil)
+end
+
 ---@type SidebarAction[]
 local help_options_order = {
     "goto-symbol",
@@ -2504,6 +2520,8 @@ local help_options_order = {
     "toggle-auto-peek",
     "toggle-close-on-goto",
     "toggle-auto-resize",
+    "decrease-max-width",
+    "increase-max-width",
     "help",
     "close",
 }
@@ -2621,6 +2639,8 @@ local sidebar_actions = {
     ["toggle-auto-peek"] = sidebar_toggle_auto_peek,
     ["toggle-close-on-goto"] = sidebar_toggle_close_on_goto,
     ["toggle-auto-resize"] = sidebar_toggle_auto_resize,
+    ["decrease-max-width"] = sidebar_decrease_max_width,
+    ["increase-max-width"] = sidebar_increase_max_width,
 
     ["help"] = sidebar_help,
     ["close"] = sidebar_close,
