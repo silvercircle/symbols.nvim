@@ -158,9 +158,9 @@ Default config below.
 
 ```lua
 {
-    -- Hide the cursor when in sidebar.
-    hide_cursor = true,
     sidebar = {
+        -- Hide the cursor when in sidebar.
+        hide_cursor = true,
         -- Side on which the sidebar will open, available options:
         -- try-left  Opens to the left of the current window if there are no
         --           windows there. Otherwise opens to the right.

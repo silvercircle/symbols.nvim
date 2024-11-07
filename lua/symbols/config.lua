@@ -86,6 +86,7 @@ M.OpenDirection = {
 }
 
 ---@class SidebarConfig
+---@field hide_cursor boolean
 ---@field open_direction OpenDirection
 ---@field on_open_make_windows_equal boolean
 ---@field cursor_follow boolean
@@ -131,15 +132,14 @@ M.OpenDirection = {
 ---@field treesitter TreesitterConfig
 
 ---@class Config
----@field hide_cursor boolean
 ---@field sidebar SidebarConfig
 ---@field providers ProvidersConfig
 ---@field dev DevConfig
 
 ---@type Config
 M.default = {
-    hide_cursor = true,
     sidebar = {
+        hide_cursor = true,
         open_direction = "try-left",
         on_open_make_windows_equal = true,
         cursor_follow = true,

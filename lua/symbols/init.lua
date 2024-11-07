@@ -3109,7 +3109,7 @@ function M.setup(...)
 
     ---@type GlobalState
     local gs = GlobalState_new()
-    gs.cursor.hide = config.hide_cursor
+    gs.cursor.hide = config.sidebar.hide_cursor
     gs.settings.open_direction = config.sidebar.open_direction
     gs.settings.on_open_make_windows_equal = config.sidebar.on_open_make_windows_equal
 
