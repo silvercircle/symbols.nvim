@@ -417,6 +417,14 @@ local LspProvider = {
     get_symbols = nil,
 }
 
+---@param ts_node any
+---@param buf integer
+---@return string
+local function get_ts_node_text(ts_node, buf)
+    local sline, scol, eline, ecol = ts_node:range()
+    return vim.api.nvim_buf_get_text(buf, sline, scol, eline, ecol, {})[1]
+end
+
 ---@type ProviderGetSymbols
 local function vimdoc_get_symbols(cache, buf)
     local rootNode = cache.parser:parse()[1]:root()
@@ -559,13 +567,6 @@ local function json_get_symbols(cache, buf)
         }
     end
 
-    ---@param ts_node any
-    ---@return string
-    local function get_node_text(ts_node)
-        local sline, scol, eline, ecol = ts_node:range()
-        return vim.api.nvim_buf_get_text(buf, sline, scol, eline, ecol, {})[1]
-    end
-
     ---@return string
     local function get_detail(kind, ts_node)
         if kind == "Object" then
@@ -575,9 +576,9 @@ local function json_get_symbols(cache, buf)
         elseif kind == "Boolean" then
             return ts_node:type()
         elseif kind == "String" then
-            return string.sub(get_node_text(ts_node), 2, -2)
+            return string.sub(get_ts_node_text(ts_node, buf), 2, -2)
         elseif kind == "Number" then
-            return get_node_text(ts_node)
+            return get_ts_node_text(ts_node, buf)
         elseif kind == "Null" then
             return "null"
         end
@@ -598,7 +599,7 @@ local function json_get_symbols(cache, buf)
                 ---@type Symbol
                 local new_symbol = {
                     kind = kind,
-                    name = string.sub(get_node_text(key_node), 2, -2),
+                    name = string.sub(get_ts_node_text(key_node, buf), 2, -2),
                     detail = get_detail(kind, value_node),
                     level = node.level + 1,
                     parent = node,
@@ -661,6 +662,48 @@ local function json_get_symbols(cache, buf)
     return true, root
 end
 
+---@param cache table
+---@param buf integer
+local function org_get_symbols(cache, buf)
+    local rootNode = cache.parser:parse()[1]:root()
+    local query = vim.treesitter.query.parse("org", "(section) @s")
+    local root = Symbol_root()
+    local current = root
+    for _, node, _, _ in query:iter_captures(rootNode, 0) do
+        local headline_node = node:child(0)
+        local stars_node = headline_node:child(0)
+        local stars = get_ts_node_text(stars_node, buf)
+        local level = #stars
+        local kind = "H" .. tostring(level)
+        local item_node = headline_node:child(1)
+        local name = get_ts_node_text(item_node, buf)
+        while current.level >= level do
+            current = current.parent
+            assert(current ~= nil)
+        end
+        local start_row, start_col, end_row, end_col = node:range()
+        local section_range = {
+            ["start"] = { line = start_row, character = start_col },
+            ["end"] = { line = end_row - 1, character = end_col },
+        }
+        ---@type Symbol
+        local new = {
+            kind = kind,
+            name = name,
+            detail = "",
+            level = level,
+            parent = current,
+            children = {},
+            range = section_range,
+            selectionRange = section_range,
+        }
+        table.insert(current.children, new)
+        current = new
+    end
+
+    return true, root
+end
+
 ---@type Provider
 local TreesitterProvider = {
     name = "treesitter",
@@ -669,7 +712,8 @@ local TreesitterProvider = {
             help = "vimdoc",
             markdown = "markdown",
             json = "json",
-            jsonl = "json"
+            jsonl = "json",
+            org = "org",
         }
         local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
         local parser_name = ft_to_parser_name[ft]
@@ -688,6 +732,7 @@ local TreesitterProvider = {
             markdown = markdown_get_symbols,
             json = json_get_symbols,
             jsonl = json_get_symbols,
+            org = org_get_symbols,
         }
         local get_symbols = get_symbols_funs[cache.ft]
         assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(cache.ft))

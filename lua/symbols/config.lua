@@ -292,6 +292,18 @@ M.default = {
                     Boolean = "Boolean",
                     Null = "Type",
                 },
+                org = {
+                    H1 = "@markup.heading.1.markdown",
+                    H2 = "@markup.heading.2.markdown",
+                    H3 = "@markup.heading.3.markdown",
+                    H4 = "@markup.heading.4.markdown",
+                    H5 = "@markup.heading.5.markdown",
+                    H6 = "@markup.heading.6.markdown",
+                    H7 = "@markup.heading.6.markdown",
+                    H8 = "@markup.heading.6.markdown",
+                    H9 = "@markup.heading.6.markdown",
+                    H10 = "@markup.heading.6.markdown",
+                },
                 default = {},
             }
         },
