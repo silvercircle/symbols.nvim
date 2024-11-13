@@ -2,8 +2,9 @@
 Table of Contents                                  *symbols-table-of-contents*
 
 1. Requirements                                         |symbols-requirements|
-  - Quick Start                             |symbols-requirements-quick-start|
-2. Tips                                                         |symbols-tips|
+2. Quick Start                                           |symbols-quick-start|
+3. Supported Languages                           |symbols-supported-languages|
+4. Tips                                                         |symbols-tips|
   - Help                                                   |symbols-tips-help|
   - Preview Window                               |symbols-tips-preview-window|
   - Keymaps                                             |symbols-tips-keymaps|
@@ -11,20 +12,21 @@ Table of Contents                                  *symbols-table-of-contents*
   - Inline Details                               |symbols-tips-inline-details|
   - Navigation                                       |symbols-tips-navigation|
   - Big Files                                         |symbols-tips-big-files|
-3. Commands                                                 |symbols-commands|
-4. Configuration                                       |symbols-configuration|
+5. Commands                                                 |symbols-commands|
+6. Configuration                                       |symbols-configuration|
   - Reference                                |symbols-configuration-reference|
-5. Alternatives                                         |symbols-alternatives|
+7. Alternatives                                         |symbols-alternatives|
 
 ==============================================================================
 1. Requirements                                         *symbols-requirements*
 
-- neovim 0.10+
+- Neovim 0.10+
 - LSP servers for desired languages
-- treesitter parsers for markdown and vimdoc (`:TSInstall markdown vimdoc`)
+- Treesitter parsers (see |symbols-supported-languages|)
 
 
-QUICK START                                 *symbols-requirements-quick-start*
+==============================================================================
+2. Quick Start                                           *symbols-quick-start*
 
 Using lazy.nvim:
 
@@ -45,7 +47,25 @@ Using lazy.nvim:
 
 
 ==============================================================================
-2. Tips                                                         *symbols-tips*
+3. Supported Languages                           *symbols-supported-languages*
+
+There are two sources of symbols that are displayed in the sidebar: 1. LSP
+servers configured by the user (for example with mason.nvim
+<https://github.com/williamboman/mason.nvim>) 2. Treesitter parsers installed
+by the user (for example with `TSInstall` command)
+
+Virtually any LSP server should work with the sidebar.
+
+Languages supported through treesitter (Treesitter parser name in brackets): -
+Markdown (markdown) - Vimdoc (vimdoc) - Org (org) - JSON (json) - JSON Lines
+(json)
+
+When a language is supported by both sources, the LSP servers take precedence
+over Treesitter.
+
+
+==============================================================================
+4. Tips                                                         *symbols-tips*
 
 
 HELP                                                       *symbols-tips-help*
@@ -118,7 +138,7 @@ What if you notice slow downs while working on a file of reasonable size?
 
 
 ==============================================================================
-3. Commands                                                 *symbols-commands*
+5. Commands                                                 *symbols-commands*
 
 - `:Symbols[!]` A command designed to be used as your main mapping. Opens the
     Symbols sidebar and jumps to it unless called with the bang (`!`). If called
@@ -132,7 +152,7 @@ What if you notice slow downs while working on a file of reasonable size?
 
 
 ==============================================================================
-4. Configuration                                       *symbols-configuration*
+6. Configuration                                       *symbols-configuration*
 
 To use the plugin you must run the setup function:
 `require("symbols").setup()`. Setup function takes any number of config
@@ -351,7 +371,7 @@ Default config below.
 
 
 ==============================================================================
-5. Alternatives                                         *symbols-alternatives*
+7. Alternatives                                         *symbols-alternatives*
 
 - aerial.nvim <https://github.com/stevearc/aerial.nvim>
 - outline.nvim <https://github.com/hedyhli/outline.nvim>

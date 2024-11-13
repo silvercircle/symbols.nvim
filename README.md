@@ -36,11 +36,11 @@ https://github.com/user-attachments/assets/a63dd071-882c-4a9c-ac3e-3abe775ef7db
 
 # Requirements
 
-- neovim 0.10+
+- Neovim 0.10+
 - LSP servers for desired languages
-- treesitter parsers for markdown and vimdoc (`:TSInstall markdown vimdoc`)
+- Treesitter parsers (see [Supported Languages](#supported-languages))
 
-## Quick Start
+# Quick Start
 
 Using lazy.nvim:
 
@@ -58,6 +58,24 @@ Using lazy.nvim:
     end
 }
 ```
+
+# Supported Languages
+
+There are two sources of symbols that are displayed in the sidebar:
+1. LSP servers configured by the user (for example with [mason.nvim](https://github.com/williamboman/mason.nvim))
+2. Treesitter parsers installed by the user (for example with `TSInstall` command)
+
+Virtually any LSP server should work with the sidebar.
+
+Languages supported through treesitter (Treesitter parser name in brackets):
+- Markdown (markdown)
+- Vimdoc (vimdoc)
+- Org (org)
+- JSON (json)
+- JSON Lines (json)
+
+When a language is supported by both sources, the LSP servers take precedence
+over Treesitter.
 
 # Tips
 
