@@ -1603,7 +1603,7 @@ end
 
 ---@param sidebar Sidebar
 ---@return Symbols
- sidebar_current_symbols = function(sidebar)
+sidebar_current_symbols = function(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
     assert(source_buf ~= -1)
     local symbols = sidebar.buf_symbols[source_buf]
@@ -2480,6 +2480,181 @@ local function sidebar_fold_all(sidebar)
 end
 
 ---@param sidebar Sidebar
+local function sidebar_search(sidebar)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_option_value("bufhidden", "delete", { buf = buf })
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {" "})
+
+    local win_h = vim.api.nvim_win_get_height(sidebar.win)
+    local win_w = vim.api.nvim_win_get_width(sidebar.win)
+    local opts = {
+        height = 1,
+        width = win_w - 1,
+        border = { "", "", "", "", "", "", "", ">" },
+        style = "minimal",
+        relative = "win",
+        win = sidebar.win,
+        anchor = "NW",
+        row = win_h-2,
+        col = 0,
+    }
+    local fw = vim.api.nvim_open_win(buf, false, opts)
+
+    -- vim.api.nvim_buf_set_extmark(
+    --     buf, SIDEBAR_EXT_NS, 0, 0,
+    --     {
+    --         virt_text = { { ">", "Comment" } },
+    --         virt_text_pos = "right_align",
+    --         hl_mode = "combine",
+    --     }
+    -- )
+
+    local function flatten_symbols(symbols)
+        local t = {}
+        local source_buf = sidebar_source_win_buf(sidebar)
+        local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
+        local kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+        local function _get(symbol)
+            if not symbols.states[symbol].visible then return end
+            if symbol.level > 0 then
+                local kind = cfg.kind_for_symbol(kinds, symbol)
+                table.insert(
+                    t,
+                    {
+                        search_str = kind .. " " .. symbol.name,
+                        range = symbol.range,
+                    }
+                )
+            end
+            for _, child in ipairs(symbol.children) do
+                _get(child)
+            end
+        end
+        _get(symbols.root)
+        return t
+    end
+
+    local last_result = {}
+
+    local function search()
+        local text = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+        if string.sub(text, 1, 1) == " " then text = string.sub(text, 2, -1) end
+        local symbols = sidebar_current_symbols(sidebar)
+        local symbol_strings = flatten_symbols(symbols)
+        if #text == 0 then
+            local buf_lines = {}
+            for _, obj in ipairs(symbol_strings) do
+                table.insert(buf_lines, obj.search_str)
+            end
+            if #buf_lines > 0 then buf_set_content(sidebar.buf, buf_lines) end
+        else
+            -- local strings = {}
+            -- for _, obj in ipairs(symbol_strings) do
+            --     table.insert(strings, obj.search_str)
+            -- end
+            -- last_result = vim.fn.matchfuzzy(strings, text)
+            -- buf_set_content(sidebar.buf, last_result)
+            -- vim.print(vim.tbl_keys(symbol_strings[1]))
+            last_result = vim.fn.matchfuzzy(symbol_strings, text, { key = "search_str" })
+            local buf_lines = {}
+            for _, obj in ipairs(last_result) do
+                table.insert(buf_lines, obj.search_str)
+            end
+            if #buf_lines > 0 then buf_set_content(sidebar.buf, buf_lines) end
+        end
+    end
+
+    vim.api.nvim_create_autocmd(
+        { "TextChangedI" },
+        {
+            group = global_autocmd_group,
+            buffer = buf,
+            callback = search,
+        }
+    )
+
+    --- TODO remove this autocommand when no longer needed
+    vim.api.nvim_create_autocmd(
+        { "WinEnter" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                local win = vim.api.nvim_get_current_win()
+                if win == fw then
+                    vim.cmd("startinsert!")
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "WinLeave" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                local win = vim.api.nvim_get_current_win()
+                if win == fw then
+                    vim.cmd("stopinsert")
+                end
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "BufHidden" },
+        {
+            group = global_autocmd_group,
+            buffer = buf,
+            callback = function()
+                vim.api.nvim_win_close(fw, true)
+            end
+        }
+    )
+
+    vim.api.nvim_create_autocmd(
+        { "BufLeave" },
+        {
+            group = global_autocmd_group,
+            buffer = buf,
+            callback = function()
+                vim.api.nvim_win_close(fw, true)
+            end
+        }
+    )
+
+    vim.keymap.set("i", "<Esc>", function()
+        vim.cmd("stopinsert")
+        vim.api.nvim_win_close(fw, true)
+        sidebar_refresh_view(sidebar)
+    end, { buffer = buf })
+
+    vim.keymap.set("i", "<S-Tab>", function()
+        local cursor = vim.api.nvim_win_get_cursor(sidebar.win)
+        local new_cursor = { cursor[1] - 1, 0 }
+        pcall(vim.api.nvim_win_set_cursor, sidebar.win, new_cursor)
+    end, { buffer = buf })
+
+    vim.keymap.set("i", "<Tab>", function()
+        local cursor = vim.api.nvim_win_get_cursor(sidebar.win)
+        local new_cursor = { cursor[1] + 1, 0 }
+        pcall(vim.api.nvim_win_set_cursor, sidebar.win, new_cursor)
+    end, { buffer = buf })
+
+    vim.keymap.set("i", "<Cr>", function()
+        local cursor = vim.api.nvim_win_get_cursor(sidebar.win)
+        local symbol = last_result[cursor[1]]
+        vim.api.nvim_win_set_cursor(
+            sidebar.source_win,
+            { symbol.range.start.line + 1, symbol.range.start.character }
+        )
+        vim.api.nvim_set_current_win(sidebar.source_win)
+    end, { buffer = buf })
+
+    vim.api.nvim_set_current_win(fw)
+    vim.cmd("startinsert!")
+end
+
+---@param sidebar Sidebar
 local function sidebar_toggle_fold(sidebar)
     local symbol, state = sidebar_current_symbol(sidebar)
     if #symbol.children == 0 then return end
@@ -2583,6 +2758,7 @@ local help_options_order = {
     "fold-one-level",
     "unfold-all",
     "fold-all",
+    "search",
     "toggle-inline-details",
     "toggle-auto-details-window",
     "toggle-auto-preview",
@@ -2701,6 +2877,8 @@ local sidebar_actions = {
     ["fold-recursively"] = sidebar_fold_recursively,
     ["fold-one-level"] = sidebar_fold_one_level,
     ["fold-all"] = sidebar_fold_all,
+
+    ["search"] = sidebar_search,
 
     ["toggle-fold"] = sidebar_toggle_fold,
     ["toggle-inline-details"] = sidebar_toggle_details,
