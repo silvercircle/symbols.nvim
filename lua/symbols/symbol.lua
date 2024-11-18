@@ -56,4 +56,17 @@ function M.Symbol_path(symbol)
     return path
 end
 
+---@return string
+function M.Symbol_inspect(symbol)
+    return vim.inspect({
+        kind = symbol.kind,
+        name = symbol.name,
+        details = symbol.detail,
+        level = symbol.level,
+        parent = (symbol.parent ~= nil and symbol.parent.name) or "nil",
+        children = "[" .. tostring(#symbol.children) .. "]",
+        range = symbol.range,
+    })
+end
+
 return M
