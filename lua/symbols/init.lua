@@ -77,73 +77,78 @@ local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
 ---@field win integer
 ---@field locked boolean
 ---@field auto_show boolean
----@field source_win integer
----@field source_buf integer
 ---@field keymaps_to_remove string[]
+local Preview = {}
+Preview.__index = Preview
 
 ---@return Preview
-local function preview_new_obj()
-    return {
+function Preview:new()
+    return setmetatable({
         sidebar = nil,
         win = -1,
         locked = false,
         auto_show = cfg.default.sidebar.preview.show_always,
-        source_buf = -1,
         keymaps_to_remove = {},
-    }
+    }, self)
 end
 
----@class PreviewOpenParams
----@field source_win integer
----@field source_buf integer
----@field symbol Symbol
----@field cursor integer[2]
----@field config PreviewConfig
----@field sidebar_win integer
----@field sidebar_side "left" | "right"
+--@class PreviewOpenParams
+--@field source_win integer
+--@field source_buf integer
+--@field symbol Symbol
+--@field cursor integer[2]
+--@field config PreviewConfig
+--@field sidebar_win integer
+--@field sidebar_side "left" | "right"
 
----@param preview Preview
-local function preview_close(preview)
-    if vim.api.nvim_win_is_valid(preview.win) then
-        vim.api.nvim_win_close(preview.win, true)
-    end
-    preview.locked = false
-    preview.win = -1
-    for _, key in ipairs(preview.keymaps_to_remove) do
-        vim.keymap.del("n", key, { buffer = preview.source_buf })
-    end
-    preview.keymaps_to_remove = {}
-    preview.source_buf = -1
-end
-
+local sidebar_source_win_buf
 local sidebar_close
+local sidebar_current_symbol
+local sidebar_current_symbols
 
----@param preview Preview
-local function preview_goto_symbol(preview)
-    local cursor = vim.api.nvim_win_get_cursor(preview.win)
-    vim.api.nvim_win_set_cursor(preview.source_win, cursor)
-    vim.api.nvim_set_current_win(preview.source_win)
-    vim.fn.win_execute(preview.source_win, "normal! zz")
-    if preview.sidebar.close_on_goto then
-        sidebar_close(preview.sidebar)
+function Preview:close()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_win_close(self.win, true)
+    end
+    self.locked = false
+    self.win = -1
+    local source_buf = sidebar_source_win_buf(self.sidebar)
+    for _, key in ipairs(self.keymaps_to_remove) do
+        vim.keymap.del("n", key, { buffer = source_buf })
+    end
+    self.keymaps_to_remove = {}
+end
+
+function Preview:goto_symbol()
+    local cursor = vim.api.nvim_win_get_cursor(self.win)
+    vim.api.nvim_win_set_cursor(self.sidebar.source_win, cursor)
+    vim.api.nvim_set_current_win(self.sidebar.source_win)
+    vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
+    if self.sidebar.close_on_goto then
+        sidebar_close(self.sidebar)
     end
 end
 
 ---@type table<PreviewAction, fun(preview: Preview)>
 local preview_actions = {
-    ["close"] = preview_close,
-    ["goto-code"] = preview_goto_symbol,
+    ["close"] = Preview.close,
+    ["goto-code"] = Preview.goto_symbol,
 }
 utils.assert_keys_are_enum(preview_actions, cfg.PreviewAction, "preview_actions")
 
----@param preview Preview
----@param params PreviewOpenParams
-local function _preview_open(preview, params)
-    local config = params.config
-    local range = params.symbol.range
-    local selection_range = params.symbol.selectionRange
+function Preview:open()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+        return
+    end
 
-    params.cursor[1] = params.cursor[1] - vim.fn.line("w0", params.sidebar_win) + 1
+    local config = self.sidebar.preview_config
+    local source_buf = sidebar_source_win_buf(self.sidebar)
+    local symbol = sidebar_current_symbol(self.sidebar)
+    local range = symbol.range
+    local selection_range = symbol.selectionRange
+    local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
+    cursor[1] = cursor[1] - vim.fn.line("w0", self.sidebar.win) + 1
 
     local height = config.fixed_size_height
     if config.auto_size then
@@ -151,10 +156,10 @@ local function _preview_open(preview, params)
         height = math.max(config.min_window_height, height)
         height = math.min(config.max_window_height, height)
     end
-    local max_height = vim.api.nvim_win_get_height(params.source_win) - 3
+    local max_height = vim.api.nvim_win_get_height(self.sidebar.source_win) - 3
     height = math.min(max_height, height)
 
-    local max_width = vim.api.nvim_win_get_width(params.source_win) - 2
+    local max_width = vim.api.nvim_win_get_width(self.sidebar.source_win) - 2
     local width = config.window_width
     width = math.min(max_width, width)
 
@@ -165,139 +170,105 @@ local function _preview_open(preview, params)
         style = "minimal",
         zindex = 45, -- to allow other floating windows (like symbol peek) in front
     }
-    if params.sidebar_side == "right" then
+    if self.sidebar.win_dir == "right" then
         opts.relative = "win"
-        opts.win = params.sidebar_win
+        opts.win = self.sidebar.win
         opts.anchor = "NE"
-        opts.row = params.cursor[1] - 1
+        opts.row = cursor[1] - 1
         opts.col = -1
     else
         opts.relative = "win"
-        opts.win = params.source_win
+        opts.win = self.sidebar.source_win
         opts.anchor = "NW"
-        opts.row = params.cursor[1] - 1
+        opts.row = cursor[1] - 1
         opts.col = 0
     end
 
-    preview.win = vim.api.nvim_open_win(params.source_buf, false, opts)
-    if params.config.show_line_number then
-        vim.wo[preview.win].number = true
+    self.win = vim.api.nvim_open_win(source_buf, false, opts)
+    if config.show_line_number then
+        vim.wo[self.win].number = true
     end
     vim.api.nvim_win_set_cursor(
-        preview.win,
+        self.win,
         { selection_range.start.line+1, selection_range.start.character }
     )
-    vim.fn.win_execute(preview.win, "normal! zt")
-    vim.api.nvim_set_option_value("cursorline", true, { win = preview.win })
+    vim.fn.win_execute(self.win, "normal! zt")
+    vim.api.nvim_set_option_value("cursorline", true, { win = self.win })
 
-    preview.source_win = params.source_win
-    preview.source_buf = params.source_buf
     for keymap, action in pairs(config.keymaps) do
-        local fn = function() preview_actions[action](preview) end
-        vim.keymap.set("n", keymap, fn, { buffer = params.source_buf })
-        table.insert(preview.keymaps_to_remove, keymap)
+        local fn = function() preview_actions[action](self) end
+        vim.keymap.set("n", keymap, fn, { buffer = source_buf })
+        table.insert(self.keymaps_to_remove, keymap)
     end
 end
 
----@param get_params fun(): PreviewOpenParams
----@param preview Preview
-local function preview_open(preview, get_params)
-    if vim.api.nvim_win_is_valid(preview.win) then
-        vim.api.nvim_set_current_win(preview.win)
-    else
-        local params = get_params()
-        _preview_open(preview, params)
-    end
+function Preview:toggle_auto_show()
+    if self.auto_show then self:close() else self:open() end
+    self.auto_show = not self.auto_show
 end
 
----@param preview Preview
----@param get_open_params fun(): PreviewOpenParams
-local function preview_toggle_auto_show(preview, get_open_params)
-    if preview.auto_show then
-        preview_close(preview)
-    else
-        preview_open(preview, get_open_params)
-    end
-    preview.auto_show = not preview.auto_show
-end
-
----@param preview Preview
----@param get_open_params fun(): PreviewOpenParams
-local function preview_on_cursor_move(preview, get_open_params)
+function Preview:on_cursor_move()
     -- After creating the preview the CursorMoved event is triggered once.
     -- We ignore it here.
-    if preview.locked then
-        preview.locked = false
+    if self.locked then
+        self.locked = false
     else
-        preview_close(preview)
-        if preview.auto_show then
-            preview_open(preview, get_open_params)
-        end
+        self:close()
+        if self.auto_show then self:open() end
     end
 end
 
----@param preview Preview
-local function preview_on_win_enter(preview)
+function Preview:on_win_enter()
     if (
-        vim.api.nvim_win_is_valid(preview.win) and
-        vim.api.nvim_get_current_win() ~= preview.win
+        vim.api.nvim_win_is_valid(self.win) and
+        vim.api.nvim_get_current_win() ~= self.win
     ) then
-        preview_close(preview)
+        self:close()
     end
 end
 
----@param preview Preview
 ---@param win integer
-local function preview_on_win_close(preview, win)
-    if win == preview.win then
-        preview_close(preview)
+function Preview:on_win_close(win)
+    if win == self.win then
+        self:close()
     end
 end
 
----@class DetailsWindow
+---@class DetailsWin
+---@field sidebar Sidebar
 ---@field auto_show boolean
 ---@field win integer
----@field sidebar_win integer
 ---@field locked boolean
 ---@field prev_cursor [integer, integer] | nil
 ---@field show_debug_info boolean
+local DetailsWin = {}
+DetailsWin.__index = DetailsWin
 
----@return DetailsWindow
-local function details_new_obj()
-    return {
+---@return DetailsWin
+function DetailsWin:new()
+    return setmetatable({
+        sidebar = nil,
         auto_show = false,
         win = -1,
-        sidebar_win = -1,
         locked = false,
         prev_cursor = nil,
         show_debug_info = false
-    }
+    }, self)
 end
 
----@class DetailsOpenParams
----@field sidebar_win integer
----@field sidebar_side "left" | "right"
----@field symbol Symbol
----@field symbol_state SymbolState
----@field kinds table<string, string> | ProviderKindFun
----@field highlights table<string, string>
+function DetailsWin:open()
+    if vim.api.nvim_win_is_valid(self.win) then return end
 
----@param details DetailsWindow
----@param params DetailsOpenParams
-local function details_open(details, params)
-    local sidebar_win = params.sidebar_win
-    local symbol = params.symbol
-
-    if vim.api.nvim_win_is_valid(details.win) then
-        return
-    end
+    local sidebar_win = self.sidebar.win
+    local symbols = sidebar_current_symbols(self.sidebar)
+    local symbol, symbol_state = sidebar_current_symbol(self.sidebar)
 
     local details_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = details_buf })
 
     local text = {}
 
-    if details.show_debug_info then
+    if self.show_debug_info then
         ---@param range Range
         ---@return string
         local function range_string(range)
@@ -315,18 +286,22 @@ local function details_open(details, params)
         table.insert(text, "   level: " .. tostring(symbol.level))
         table.insert(text, "   range: " .. range_string(symbol.range))
         table.insert(text, "   selectionRange: " .. range_string(symbol.selectionRange))
-        table.insert(text, "   folded: " .. tostring(params.symbol_state.folded))
-        table.insert(text, "   visible: " .. tostring(params.symbol_state.visible))
+        table.insert(text, "   folded: " .. tostring(symbol_state.folded))
+        table.insert(text, "   visible: " .. tostring(symbol_state.visible))
         table.insert(text, "")
     end
+
+    local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(self.sidebar) })
+    local kinds_cfg = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local highlights_cfg = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
 
     ---@type Highlight[]
     local highlights = {}
 
-    local display_kind = cfg.kind_for_symbol(params.kinds, symbol)
+    local display_kind = cfg.kind_for_symbol(kinds_cfg, symbol)
     if display_kind ~= "" then
         local highlight = nvim.Highlight:new({
-            group = params.highlights[symbol.kind],
+            group = highlights_cfg[symbol.kind],
             line = #text + 1,
             col_start = 1,
             col_end = 1 + #display_kind,
@@ -373,13 +348,13 @@ local function details_open(details, params)
     if row < 0 then row = cursor[1] end
 
     local col = 0
-    if params.sidebar_side == "right" and width + 2 > sidebar_width then
+    if self.sidebar.win_dir == "right" and width + 2 > sidebar_width then
         col = col - (width + 2 - sidebar_width)
     end
 
     local opts = {
         relative = "win",
-        win = params.sidebar_win,
+        win = self.sidebar.win,
         anchor = "NW",
         row = row,
         col = col,
@@ -388,61 +363,49 @@ local function details_open(details, params)
         border = "single",
         style = "minimal",
     }
-    details.win = vim.api.nvim_open_win(details_buf, false, opts)
-    details.sidebar_win = sidebar_win
+    self.win = vim.api.nvim_open_win(details_buf, false, opts)
 end
 
----@param details DetailsWindow
----@param get_open_params fun(): DetailsOpenParams
-local function details_on_cursor_move(details, get_open_params)
-    if details.locked then
-        if details.prev_cursor ~= nil then
-            vim.api.nvim_win_set_cursor(details.sidebar_win, details.prev_cursor)
-            details.prev_cursor = nil
+function DetailsWin:on_cursor_move()
+    if self.locked then
+        if self.prev_cursor ~= nil then
+            vim.api.nvim_win_set_cursor(self.sidebar.win, self.prev_cursor)
+            self.prev_cursor = nil
         end
-        details.locked = false
+        self.locked = false
     else
-        if vim.api.nvim_win_is_valid(details.win) then
-            vim.api.nvim_win_close(details.win, true)
-            details.win = -1
+        if vim.api.nvim_win_is_valid(self.win) then
+            vim.api.nvim_win_close(self.win, true)
+            self.win = -1
         end
-        if details.auto_show then
-            details_open(details, get_open_params())
+        if self.auto_show then
+            self:open()
         end
     end
 end
 
----@param details DetailsWindow
-local function details_close(details)
-    if vim.api.nvim_win_is_valid(details.win) then
-        vim.api.nvim_win_close(details.win, true)
+function DetailsWin:close()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_win_close(self.win, true)
     end
-    details.win = -1
-    details.locked = false
+    self.win = -1
+    self.locked = false
 end
 
----@param details DetailsWindow
----@param get_open_params fun(): DetailsOpenParams
-local function details_toggle_auto_show(details, get_open_params)
-    if details.auto_show then
-        details_close(details)
-    else
-        details_open(details, get_open_params())
-    end
-    details.auto_show = not details.auto_show
+function DetailsWin:toggle_auto_show()
+    if self.auto_show then self:close() else self:open() end
+    self.auto_show = not self.auto_show
 end
 
----@param details DetailsWindow
----@param get_open_params fun(): DetailsOpenParams
-local function details_on_win_enter(details, get_open_params)
-    if vim.api.nvim_win_is_valid(details.win) then
+function DetailsWin:on_win_enter()
+    if vim.api.nvim_win_is_valid(self.win) then
         local curr_win = vim.api.nvim_get_current_win()
-        if curr_win == details.sidebar_win then
-            if details.auto_show then
-                details_open(details, get_open_params())
+        if curr_win == self.sidebar.win then
+            if self.auto_show then
+                self:open()
             end
         else
-            details_close(details)
+            self:close()
         end
     end
 end
@@ -776,8 +739,6 @@ local function activate_cursorline(cursor)
     end
 end
 
-local sidebar_current_symbols
-
 ---@param sidebar Sidebar
 local function hide_cursor(sidebar)
     local pos = vim.api.nvim_win_get_cursor(sidebar.win)
@@ -809,7 +770,7 @@ end
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
 ---@field preview_config PreviewConfig
 ---@field preview Preview
----@field details DetailsWindow
+---@field details DetailsWin
 ---@field char_config CharConfig
 ---@field show_inline_details boolean
 ---@field show_guide_lines boolean
@@ -839,8 +800,8 @@ local function sidebar_new_obj()
         buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
         symbol_display_config = {},
-        preview = preview_new_obj(),
-        details = details_new_obj(),
+        preview = Preview:new(),
+        details = DetailsWin:new(),
         char_config = config.chars,
         show_inline_details = false,
         show_guide_lines = false,
@@ -864,7 +825,7 @@ end
 
 ---@param sidebar Sidebar
 ---@return integer
-local function sidebar_source_win_buf(sidebar)
+sidebar_source_win_buf = function(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.source_win) then
         return vim.api.nvim_win_get_buf(sidebar.source_win)
     end
@@ -1093,14 +1054,14 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_preview_close(sidebar)
-    preview_close(sidebar.preview)
+    sidebar.preview:close()
 end
 
 --- Restore window state to default. Useful when opening a file in the sidebar window.
 ---@param sidebar Sidebar
 local function sidebar_win_restore(sidebar)
     sidebar_preview_close(sidebar)
-    details_close(sidebar.details)
+    sidebar.details:close()
     WinSettings_apply(sidebar.win, sidebar.win_settings)
     reset_cursor(sidebar.gs.cursor)
     sidebar.win = -1
@@ -1110,7 +1071,7 @@ end
 sidebar_close = function(sidebar)
     if not sidebar_visible(sidebar) then return end
     sidebar_preview_close(sidebar)
-    details_close(sidebar.details)
+    sidebar.details:close()
     if vim.api.nvim_win_is_valid(sidebar.win) then
         vim.api.nvim_win_close(sidebar.win, true)
     end
@@ -1130,7 +1091,7 @@ end
 
 ---@param sidebar Sidebar
 ---@return Symbol, SymbolState
-local function sidebar_current_symbol(sidebar)
+sidebar_current_symbol = function(sidebar)
     assert(vim.api.nvim_win_is_valid(sidebar.win))
 
     local symbols = sidebar_current_symbols(sidebar)
@@ -1571,56 +1532,19 @@ local function sidebar_goto_symbol(sidebar)
 end
 
 ---@param sidebar Sidebar
-local function _sidebar_preview_open_params(sidebar)
-    ---@return PreviewOpenParams
-    return function()
-        ---@type PreviewOpenParams
-        local obj = {
-            source_win = sidebar.source_win,
-            source_buf = sidebar_source_win_buf(sidebar),
-            cursor = vim.api.nvim_win_get_cursor(sidebar.win),
-            symbol = sidebar_current_symbol(sidebar),
-            config = sidebar.preview_config,
-            sidebar_win = sidebar.win,
-            sidebar_side = sidebar.win_dir,
-        }
-        return obj
-    end
-end
-
----@param sidebar Sidebar
 local function sidebar_preview_open(sidebar)
-    preview_open(sidebar.preview, _sidebar_preview_open_params(sidebar))
-end
-
----@param sidebar Sidebar
----@return fun(): DetailsOpenParams
-local function _sidebar_details_open_params(sidebar)
-    return function()
-        local symbols = sidebar_current_symbols(sidebar)
-        local symbol, symbol_state = sidebar_current_symbol(sidebar)
-        local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(sidebar) })
-        ---@type DetailsOpenParams
-        return {
-            sidebar_win = sidebar.win,
-            sidebar_side = sidebar.win_dir,
-            symbol = symbol,
-            symbol_state = symbol_state,
-            kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft),
-            highlights = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft),
-        }
-    end
+    sidebar.preview:open()
 end
 
 ---@param sidebar Sidebar
 local function sidebar_peek(sidebar)
     local reopen_details = sidebar.details.win ~= -1
-    if reopen_details then details_close(sidebar.details) end
+    if reopen_details then sidebar.details:close() end
     local reopen_preview = sidebar.preview.win ~= -1
-    if reopen_preview then preview_close(sidebar.preview) end
+    if reopen_preview then sidebar.preview:close() end
     _sidebar_goto_symbol(sidebar)
     vim.api.nvim_set_current_win(sidebar.win)
-    if reopen_details then details_open(sidebar.details, _sidebar_details_open_params(sidebar)()) end
+    if reopen_details then sidebar.details:open() end
     if reopen_preview then sidebar_preview_open(sidebar) end
 end
 
@@ -1635,9 +1559,9 @@ end
 ---@param sidebar Sidebar
 local function sidebar_toggle_show_details(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.details.win) then
-        details_close(sidebar.details)
+        sidebar.details:close()
     else
-        details_open(sidebar.details, _sidebar_details_open_params(sidebar)())
+        sidebar.details:open()
     end
 end
 
@@ -1997,13 +1921,13 @@ local function sidebar_toggle_details(sidebar)
 end
 
 local function sidebar_toggle_auto_details(sidebar)
-    details_toggle_auto_show(sidebar.details, _sidebar_details_open_params(sidebar))
+    sidebar.details:toggle_auto_show()
     sidebar_show_toggle_notification(sidebar.win, "auto details win", sidebar.details.auto_show)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_preview(sidebar)
-    preview_toggle_auto_show(sidebar.preview, _sidebar_preview_open_params(sidebar))
+    sidebar.preview:toggle_auto_show()
     sidebar_show_toggle_notification(sidebar.win, "auto preview win", sidebar.preview.auto_show)
 end
 
@@ -2228,22 +2152,20 @@ utils.assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions"
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
-    preview_on_cursor_move(sidebar.preview, _sidebar_preview_open_params(sidebar))
-    details_on_cursor_move(sidebar.details, _sidebar_details_open_params(sidebar))
+    sidebar.preview:on_cursor_move()
+    sidebar.details:on_cursor_move()
     if sidebar.auto_peek then sidebar_peek(sidebar) end
 end
 
 ---@param sidebar Sidebar
 local function sidebar_on_scroll(sidebar)
     if sidebar.details.win ~= -1 then
-        details_close(sidebar.details)
-        local params = _sidebar_details_open_params(sidebar)()
-        details_open(sidebar.details, params)
+        sidebar.details:close()
+        sidebar.details:open()
     end
     if sidebar.preview.win ~= -1 then
-        preview_close(sidebar.preview)
-        local params = _sidebar_preview_open_params(sidebar)
-        preview_open(sidebar.preview, params)
+        sidebar.preview:close()
+        sidebar.preview:open()
     end
 end
 
@@ -2261,8 +2183,11 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.gs = gs
 
     sidebar.preview_config = config.preview
-    sidebar.preview.auto_show = config.preview.show_always
     sidebar.preview.sidebar = sidebar
+    sidebar.preview.auto_show = config.preview.show_always
+
+    sidebar.details.sidebar = sidebar
+    sidebar.details.show_debug_info = debug
 
     sidebar.show_inline_details = config.show_inline_details
     sidebar.details.auto_show = config.show_details_pop_up
@@ -2277,8 +2202,6 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.cursor_follow = config.cursor_follow
     sidebar.auto_peek = config.auto_peek
     sidebar.close_on_goto = config.close_on_goto
-
-    sidebar.details.show_debug_info = debug
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")
@@ -2332,8 +2255,8 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             callback = function()
-                preview_on_win_enter(sidebar.preview)
-                details_on_win_enter(sidebar.details, _sidebar_details_open_params(sidebar))
+                sidebar.preview:on_win_enter()
+                sidebar.details:on_win_enter()
                 if vim.api.nvim_get_current_win() == sidebar.win and sidebar.gs.cursor.hide then
                     hide_cursor(sidebar)
                 end
@@ -2347,7 +2270,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
             group = global_autocmd_group,
             callback = function(e)
                 local win = tonumber(e.match, 10)
-                preview_on_win_close(sidebar.preview, win)
+                sidebar.preview:on_win_close(win)
             end,
         }
     )
