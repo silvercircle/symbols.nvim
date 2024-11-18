@@ -1,19 +1,8 @@
 local cfg = require("symbols.config")
+local utils = require("symbols.utils")
+local log = require("symbols.log")
 
 local M = {}
-
-local MAX_INT = 2147483647
-
----@param tbl table
----@return table
-local function reverse_map(tbl)
-    local rev = {}
-    for k, v in pairs(tbl) do
-        assert(rev[v] == nil, "to reverse a map values must be unique")
-        rev[v] = k
-    end
-    return rev
-end
 
 ---@type table<string, boolean>
 local cmds = {}
@@ -34,93 +23,6 @@ local function remove_user_commands()
     end
 end
 
----@type integer
-local DEFAULT_LOG_LEVEL = vim.log.levels.ERROR
----@type integer
-local LOG_LEVEL = DEFAULT_LOG_LEVEL
-
----@type table<integer, string>
-local LOG_LEVEL_STRING = {
-    [vim.log.levels.ERROR] = "ERROR",
-    [vim.log.levels.WARN] = "WARN",
-    [vim.log.levels.INFO] = "INFO",
-    [vim.log.levels.DEBUG] = "DEBUG",
-    [vim.log.levels.TRACE] = "TRACE",
-}
-
----@type table<integer, string>
-local LOG_LEVEL_CMD_STRING = {
-    [vim.log.levels.ERROR] = "error",
-    [vim.log.levels.WARN] = "warning",
-    [vim.log.levels.INFO] = "info",
-    [vim.log.levels.DEBUG] = "debug",
-    [vim.log.levels.TRACE] = "trace",
-    [vim.log.levels.OFF] = "off",
-}
-
----@type table<string, integer>
-local CMD_STRING_LOG_LEVEL = reverse_map(LOG_LEVEL_CMD_STRING)
-
----@param msg string
----@param level any
-local function _log(msg, level)
-    if level >= LOG_LEVEL then
-        local date = os.date("%Y/%m/%d %H:%M:%S")
-        local fun = ""
-        if level == vim.log.levels.TRACE then
-            local name = debug.getinfo(3, "n").name or "<anonymous>"
-            fun = "(" .. name .. ") "
-        end
-        local _msg = table.concat({"[", date, "] ", LOG_LEVEL_STRING[level], " ", fun, msg}, "")
-        vim.notify(_msg, level)
-    end
-end
-
----@alias LogFun fun(msg: string | nil)
-
-local log = {
-    ---@type LogFun
-    error = function(msg) _log(msg or "", vim.log.levels.ERROR) end,
-    ---@type LogFun
-    warn = function(msg) _log(msg or "", vim.log.levels.WARN) end,
-    ---@type LogFun
-    info = function(msg) _log(msg or "", vim.log.levels.INFO) end,
-    ---@type LogFun
-    debug = function(msg) _log(msg or "", vim.log.levels.DEBUG) end,
-    ---@type LogFun
-    trace = function(msg) _log(msg or "", vim.log.levels.TRACE) end,
-}
-
----@param name string
----@param desc string
-local function create_change_log_level_user_command(name, desc)
-    local log_levels = vim.tbl_keys(CMD_STRING_LOG_LEVEL)
-    create_user_command(
-        name,
-        function(e)
-            local arg = e.fargs[1]
-            local new_log_level = CMD_STRING_LOG_LEVEL[arg]
-            if new_log_level == nil then
-                log.error("Invalid log level: " .. arg)
-            else
-                LOG_LEVEL = new_log_level
-            end
-        end,
-        {
-            nargs = 1,
-            complete = function(arg, _)
-                local suggestions = {}
-                for _, log_level in ipairs(log_levels) do
-                    if vim.startswith(log_level, arg) then
-                        table.insert(suggestions, log_level)
-                    end
-                end
-                return suggestions
-            end,
-            desc = desc
-        }
-    )
-end
 
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
 
@@ -338,7 +240,7 @@ local LspSymbolKind = {
 }
 
 ---@type table<LspSymbolKind, string>
-local LspSymbolKindString = reverse_map(LspSymbolKind)
+local LspSymbolKindString = utils.reverse_map(LspSymbolKind)
 
 ---@param lsp_symbol any
 ---@param parent Symbol?
@@ -2378,7 +2280,7 @@ end
 local function sidebar_unfold_recursively(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
     local symbol, _ = sidebar_current_symbol(sidebar)
-    symbol_change_folded_rec(symbols, symbol, false, MAX_INT)
+    symbol_change_folded_rec(symbols, symbol, false, utils.MAX_INT)
     sidebar_refresh_view(sidebar)
 end
 
@@ -2386,13 +2288,13 @@ end
 local function sidebar_fold_recursively(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
-    local changes = symbol_change_folded_rec(symbols, symbol, true, MAX_INT)
+    local changes = symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     if changes == 0 then
         while(symbol.level > 1) do
             symbol = symbol.parent
             assert(symbol ~= nil)
         end
-        symbol_change_folded_rec(symbols, symbol, true, MAX_INT)
+        symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     end
     sidebar_refresh_view(sidebar)
     move_cursor_to_symbol(sidebar, symbol)
@@ -2410,7 +2312,7 @@ local function sidebar_unfold_one_level(sidebar)
             return symbol.level
         end
 
-        local min_level = MAX_INT
+        local min_level = utils.MAX_INT
         for _, sym in ipairs(symbol.children) do
             min_level = math.min(min_level, find_level_to_unfold(sym))
         end
@@ -2467,14 +2369,14 @@ end
 ---@param sidebar Sidebar
 local function sidebar_unfold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, symbols.root, false, MAX_INT)
+    symbol_change_folded_rec(symbols, symbols.root, false, utils.MAX_INT)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, symbols.root, true, MAX_INT)
+    symbol_change_folded_rec(symbols, symbols.root, true, utils.MAX_INT)
     symbols.states[symbols.root].folded = false
     sidebar_refresh_view(sidebar)
 end
@@ -3095,7 +2997,7 @@ local function setup_dev(gs, sidebars, config)
         unload_package("symbols")
         require("symbols").setup(config)
 
-        vim.cmd("SymbolsLogLevel " .. LOG_LEVEL_CMD_STRING[LOG_LEVEL])
+        vim.cmd("SymbolsLogLevel " .. log.LOG_LEVEL_CMD_STRING[LOG_LEVEL])
 
         log.info("symbols.nvim reloaded")
     end
@@ -3247,12 +3149,16 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             for _, sidebar in ipairs(sidebars) do
                 sidebar.details.show_debug_info = config.dev.enabled
             end
-            LOG_LEVEL = (config.dev.enabled and config.dev.log_level) or DEFAULT_LOG_LEVEL
+            LOG_LEVEL = (config.dev.enabled and config.dev.log_level) or log.DEFAULT_LOG_LEVEL
         end,
         {}
     )
 
-    create_change_log_level_user_command("SymbolsLogLevel", "Change the Symbols debug level")
+    log.create_change_log_level_user_command(
+        "SymbolsLogLevel",
+        "Change the Symbols debug level",
+        create_user_command
+    )
 end
 
 ---@param gs GlobalState
