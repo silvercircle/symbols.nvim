@@ -42,8 +42,7 @@ local LspSymbolKind = {
 	TypeParameter = 26,
 }
 
----@type table<LspSymbolKind, string>
-local LspSymbolKindString = utils.reverse_map(LspSymbolKind)
+local LspSymbolKindString = utils.tbl_reverse(LspSymbolKind)
 
 ---@param lsp_symbol any
 ---@param parent Symbol?

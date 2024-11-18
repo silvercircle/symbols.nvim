@@ -2,6 +2,8 @@ local cfg = require("symbols.config")
 local utils = require("symbols.utils")
 local log = require("symbols.log")
 
+local nvim = require("symbols.nvim")
+
 local _symbol = require("symbols.symbol")
 local Symbol_root = _symbol.Symbol_root
 local Symbol_path = _symbol.Symbol_path
@@ -31,50 +33,6 @@ local function remove_user_commands()
 end
 
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
-
----@param arr1 table
----@param arr2 table
----@return table
-local function array_diff(arr1, arr2)
-    local diff = {}
-    for _, v in ipairs(arr1) do
-        if not vim.tbl_contains(arr2, v) then
-            table.insert(diff, v)
-        end
-    end
-    return diff
-end
-
----@param array string[]
----@param enum table<string, string>
----@param array_name string
-local function assert_array_is_enum(array, enum, array_name)
-    local expected = vim.tbl_values(enum)
-    local actual_extra = array_diff(array, expected)
-    if #actual_extra > 0 then
-        assert(false, "Invalid values in array " .. array_name .. ": " .. vim.inspect(actual_extra))
-    end
-    local expected_extra = array_diff(expected, array)
-    if #expected_extra > 0 then
-        assert(false, "Missing values in array " .. array_name .. ": " .. vim.inspect(expected_extra))
-    end
-end
-
----@param table_ table<string, any>
----@param enum table<string, string>
----@param table_name string
-local function assert_keys_are_enum(table_, enum, table_name)
-    local actual = vim.tbl_keys(table_)
-    local expected = vim.tbl_values(enum)
-    local actual_extra = array_diff(actual, expected)
-    if #actual_extra > 0 then
-        assert(false, "Invalid keys in table " .. table_name .. ": " .. vim.inspect(actual_extra))
-    end
-    local expected_extra = array_diff(expected, actual)
-    if #expected_extra > 0 then
-        assert(false, "Missing keys in table " .. table_name .. ": " .. vim.inspect(expected_extra))
-    end
-end
 
 ---@type table<integer, integer>
 local _prev_flash_highlight_ns = {}
@@ -108,43 +66,7 @@ local function flash_highlight_under_cursor(win, duration_ms, lines)
     )
 end
 
----@param buf integer
----@param value boolean
-local function buf_modifiable(buf, value)
-    vim.api.nvim_set_option_value("modifiable", value, { buf = buf })
-end
-
----@param buf integer
----@param lines string[]
-local function buf_set_content(buf, lines)
-    buf_modifiable(buf, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    buf_modifiable(buf, false)
-end
-
----@param win integer
----@param name string
----@param value any
-local function win_set_option(win, name, value)
-    vim.api.nvim_set_option_value(name, value, { win = win })
-end
-
-local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
 local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
-
----@class Highlight
----@field group string
----@field line integer  -- one-indexed
----@field col_start integer
----@field col_end integer
-
----@param buf integer
----@param hl Highlight
-local function Highlight_apply(buf, hl)
-    vim.api.nvim_buf_add_highlight(
-        buf, SIDEBAR_HL_NS, hl.group, hl.line-1, hl.col_start, hl.col_end
-    )
-end
 
 ---@alias RefreshSymbolsFun fun(symbols: Symbol, provider_name: string, provider_config: table)
 ---@alias KindToHlGroupFun fun(kind: string): string
@@ -212,7 +134,7 @@ local preview_actions = {
     ["close"] = preview_close,
     ["goto-code"] = preview_goto_symbol,
 }
-assert_keys_are_enum(preview_actions, cfg.PreviewAction, "preview_actions")
+utils.assert_keys_are_enum(preview_actions, cfg.PreviewAction, "preview_actions")
 
 ---@param preview Preview
 ---@param params PreviewOpenParams
@@ -403,12 +325,13 @@ local function details_open(details, params)
 
     local display_kind = cfg.kind_for_symbol(params.kinds, symbol)
     if display_kind ~= "" then
-        table.insert(highlights, {
+        local highlight = nvim.Highlight:new({
             group = params.highlights[symbol.kind],
             line = #text + 1,
             col_start = 1,
             col_end = 1 + #display_kind,
         })
+        table.insert(highlights, highlight)
         display_kind = display_kind .. " "
     end
     table.insert(text, " " .. display_kind .. table.concat(Symbol_path(symbol), "."))
@@ -417,12 +340,12 @@ local function details_open(details, params)
         local detail_first_line = #text + 1
         for detail_line, line in ipairs(vim.split(symbol.detail, "\n")) do
             table.insert(text, "   " .. line)
-            table.insert(highlights, {
+            table.insert(highlights, nvim.Highlight:new({
                 group = "Comment",
                 line = detail_first_line + detail_line - 1,
                 col_start = 0,
                 col_end = 3 + #line,
-            })
+            }))
         end
     end
 
@@ -431,10 +354,10 @@ local function details_open(details, params)
         longest_line = math.max(longest_line, #line)
     end
 
-    buf_set_content(details_buf, text)
+    nvim.buf_set_content(details_buf, text)
 
-    for _, hl in ipairs(highlights) do
-        Highlight_apply(details_buf, hl)
+    for _, highlight in ipairs(highlights) do
+        highlight:apply(details_buf)
     end
 
     local line_count = vim.api.nvim_buf_line_count(details_buf)
@@ -1314,14 +1237,13 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 local kind_display = cfg.kind_for_symbol(kinds_display_config, sym, kinds_default_config)
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
-                ---@type Highlight
-                local hl = {
+                local highlight = nvim.Highlight:new({
                     group = highlights_config[sym.kind],
                     line = line_nr,
                     col_start = #indent + #prefix,
                     col_end = #indent + #prefix + #kind_display
-                }
-                table.insert(highlights, hl)
+                })
+                table.insert(highlights, highlight)
                 local new_indent
                 if show_guide_lines and sym.level > 1 and sym_i ~= #symbol.children then
                     new_indent = indent .. chars.guide_vert .. " "
@@ -1397,10 +1319,10 @@ local function sidebar_refresh_view(sidebar)
 
     sidebar.lines = get_line_for_each_symbol(symbols)
 
-    buf_set_content(sidebar.buf, buf_lines)
+    nvim.buf_set_content(sidebar.buf, buf_lines)
 
-    for _, hl in ipairs(highlights) do
-        Highlight_apply(sidebar.buf, hl)
+    for _, highlight in ipairs(highlights) do
+        highlight:apply(sidebar.buf)
     end
 
     if sidebar.show_inline_details then
@@ -1470,7 +1392,7 @@ local function sidebar_refresh_symbols(sidebar)
     ---@param provider_name string
     local function on_fail(provider_name)
         local lines = { "", " [symbols.nvim]", "", " " .. provider_name .. " provider failed" }
-        buf_set_content(sidebar.buf, lines)
+        nvim.buf_set_content(sidebar.buf, lines)
         sidebar_refresh_size(sidebar, lines)
     end
 
@@ -1480,7 +1402,7 @@ local function sidebar_refresh_symbols(sidebar)
             "", " [symbols.nvim]", "", " " .. provider_name .. " provider timed out",
             "", " Try again or increase", " timeout in config."
         }
-        buf_set_content(sidebar.buf, lines)
+        nvim.buf_set_content(sidebar.buf, lines)
         sidebar_refresh_size(sidebar, lines)
     end
 
@@ -1496,7 +1418,7 @@ local function sidebar_refresh_symbols(sidebar)
         else
             lines = { "", " [symbols.nvim]", "", " no provider supporting", " " .. ft .. " found" }
         end
-        buf_set_content(sidebar.buf, lines)
+        nvim.buf_set_content(sidebar.buf, lines)
         sidebar_refresh_size(sidebar, lines)
     end
 end
@@ -1954,21 +1876,18 @@ local function sidebar_search(sidebar)
             for _, obj in ipairs(symbol_strings) do
                 table.insert(buf_lines, obj.search_str)
             end
-            if #buf_lines > 0 then buf_set_content(sidebar.buf, buf_lines) end
+            if #buf_lines > 0 then
+                nvim.buf_set_content(sidebar.buf, buf_lines)
+            end
         else
-            -- local strings = {}
-            -- for _, obj in ipairs(symbol_strings) do
-            --     table.insert(strings, obj.search_str)
-            -- end
-            -- last_result = vim.fn.matchfuzzy(strings, text)
-            -- buf_set_content(sidebar.buf, last_result)
-            -- vim.print(vim.tbl_keys(symbol_strings[1]))
             last_result = vim.fn.matchfuzzy(symbol_strings, text, { key = "search_str" })
             local buf_lines = {}
             for _, obj in ipairs(last_result) do
                 table.insert(buf_lines, obj.search_str)
             end
-            if #buf_lines > 0 then buf_set_content(sidebar.buf, buf_lines) end
+            if #buf_lines > 0 then
+                nvim.buf_set_content(sidebar.buf, buf_lines)
+            end
         end
     end
 
@@ -2181,7 +2100,7 @@ local help_options_order = {
     "help",
     "close",
 }
-assert_array_is_enum(help_options_order, cfg.SidebarAction, "help_options_order")
+utils.assert_list_is_enum(help_options_order, cfg.SidebarAction, "help_options_order")
 
 ---@type table<integer, SidebarAction>
 local action_order = {}
@@ -2223,8 +2142,8 @@ local function sidebar_help(sidebar)
         max_width = math.max(max_width, #lines[line_no])
     end
 
-    buf_set_content(help_buf, lines)
-    buf_modifiable(help_buf, false)
+    nvim.buf_set_content(help_buf, lines)
+    nvim.buf_modifiable(help_buf, false)
 
     local width = max_width + 1
     local height = #lines + 1
@@ -2244,7 +2163,7 @@ local function sidebar_help(sidebar)
         style = "minimal",
     }
     local help_win = vim.api.nvim_open_win(help_buf, false, opts)
-    win_set_option(help_win, "cursorline", true)
+    nvim.win_set_option(help_win, "cursorline", true)
     vim.api.nvim_set_current_win(help_win)
     vim.api.nvim_win_set_cursor(help_win, { 2, 0 })
 
@@ -2305,7 +2224,7 @@ local sidebar_actions = {
     ["close"] = sidebar_close,
 }
 
-assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
+utils.assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
@@ -2445,7 +2364,7 @@ local function show_debug_in_current_window(sidebars)
     local win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
 
-    buf_modifiable(buf, false)
+    nvim.buf_modifiable(buf, false)
 end
 
 ---@param sidebars Sidebar[]
@@ -2519,7 +2438,7 @@ local function setup_dev(gs, sidebars, config)
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         local win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_buf(win, buf)
-        buf_modifiable(buf, false)
+        nvim.buf_modifiable(buf, false)
     end
 
     ---@type table<DevAction, fun()>
@@ -2528,7 +2447,7 @@ local function setup_dev(gs, sidebars, config)
         ["debug"] = debug,
         ["show-config"] = show_config,
     }
-    assert_keys_are_enum(dev_action_to_fun, cfg.DevAction, "dev_action_to_fun")
+    utils.assert_keys_are_enum(dev_action_to_fun, cfg.DevAction, "dev_action_to_fun")
 
     for key, action in pairs(config.dev.keymaps) do
         vim.keymap.set("n", key, dev_action_to_fun[action])

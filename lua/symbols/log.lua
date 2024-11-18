@@ -4,7 +4,6 @@ local M = {}
 
 ---@type integer
 M.DEFAULT_LOG_LEVEL = vim.log.levels.ERROR
----@type integer
 M.LOG_LEVEL = M.DEFAULT_LOG_LEVEL
 
 ---@type table<integer, string>
@@ -26,8 +25,7 @@ M.LOG_LEVEL_CMD_STRING = {
     [vim.log.levels.OFF] = "off",
 }
 
----@type table<string, integer>
-M.CMD_STRING_LOG_LEVEL = utils.reverse_map(M.LOG_LEVEL_CMD_STRING)
+M.CMD_STRING_LOG_LEVEL = utils.tbl_reverse(M.LOG_LEVEL_CMD_STRING)
 
 ---@param msg string
 ---@param level any
