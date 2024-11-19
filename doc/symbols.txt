@@ -39,8 +39,8 @@ Using lazy.nvim:
                 -- custom settings here
                 -- e.g. hide_cursor = false
             })
-            vim.keymap.set("n", ",s", ":Symbols<CR>")
-            vim.keymap.set("n", ",S", ":SymbolsClose<CR>")
+            vim.keymap.set("n", ",s", "<cmd> Symbols<CR>")
+            vim.keymap.set("n", ",S", "<cmd> SymbolsClose<CR>")
         end
     }
 <
