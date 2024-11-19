@@ -768,108 +768,8 @@ function SearchView:new()
     }, self)
 end
 
-function SearchView:show_prompt_win()
-    if self.prompt_buf == -1 then
-        self.prompt_buf = vim.api.nvim_create_buf(false, true)
-    end
+function SearchView:clear_prompt_buf()
     vim.api.nvim_buf_set_lines(self.prompt_buf, 0, -1, false, {" "})
-    local win = self.sidebar.win
-    local win_h = vim.api.nvim_win_get_height(win)
-    local win_w = vim.api.nvim_win_get_width(win)
-    local opts = {
-        height = 1,
-        width = win_w - 1,
-        border = { "", "", "", "", "", "", "", ">" },
-        style = "minimal",
-        relative = "win",
-        win = win,
-        anchor = "NW",
-        row = win_h - 2,
-        col = 0,
-    }
-    self.prompt_win = vim.api.nvim_open_win(self.prompt_buf, false, opts)
-end
-
----@class (exact) SearchSymbol
----@field search_str string
----@field line integer
----@field character integer
-
----@return SearchSymbol[]
-local function _prepare_symbols_for_search(symbols, ft)
-    local t = {}
-    local kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
-    local function _prepare(symbol)
-        if not symbols.states[symbol].visible then return end
-        if symbol.level > 0 then
-            local kind = cfg.kind_for_symbol(kinds, symbol)
-            ---@type SearchSymbol
-            local search_symbol = {
-                search_str = kind .. " " .. symbol.name,
-                line = symbol.range.start.line,
-                character = symbol.range.start.character,
-            }
-            table.insert(t, search_symbol)
-        end
-        for _, child in ipairs(symbol.children) do
-            _prepare(child)
-        end
-    end
-    _prepare(symbols.root)
-    return t
-end
-
----@param symbols SearchSymbol[]
----@return string[]
-local function _search_symbols_to_lines(symbols)
-    local buf_lines = {}
-    for _, symbol in ipairs(symbols) do
-        table.insert(buf_lines, symbol.search_str)
-    end
-    return buf_lines
-end
-
-function SearchView:search()
-    local text = vim.api.nvim_buf_get_lines(self.prompt_buf, 0, 1, false)[1]
-    if string.sub(text, 1, 1) == " " then text = string.sub(text, 2, -1) end
-
-    local symbols = sidebar_current_symbols(self.sidebar)
-    local source_buf = sidebar_source_win_buf(self.sidebar)
-    local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
-    local symbol_strings = _prepare_symbols_for_search(symbols, ft)
-    local buf_lines = {}
-    if #text == 0 then
-        buf_lines = _search_symbols_to_lines(symbol_strings)
-    else
-        self.search_results = vim.fn.matchfuzzy(symbol_strings, text, { key = "search_str" })
-        buf_lines = _search_symbols_to_lines(self.search_results)
-    end
-    if #buf_lines == 0 then table.insert(buf_lines, "") end
-    nvim.buf_set_content(self.buf, buf_lines)
-end
-
-function SearchView:hide()
-    if vim.api.nvim_win_is_valid(self.prompt_win) then
-        vim.cmd("stopinsert")
-        vim.api.nvim_win_close(self.prompt_win, true)
-    end
-end
-
-function SearchView:jump_to_current_symbol()
-    local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
-    local symbol = self.search_results[cursor[1]]
-    vim.api.nvim_win_set_cursor(
-        self.sidebar.source_win,
-        { symbol.line + 1, symbol.character }
-    )
-    vim.api.nvim_set_current_win(self.sidebar.source_win)
-end
-
-local sidebar_change_view
-
-function SearchView:show_prompt()
-    self:show_prompt_win()
-
     vim.api.nvim_create_autocmd(
         { "TextChangedI" },
         {
@@ -910,6 +810,7 @@ function SearchView:show_prompt()
             buffer = self.prompt_buf,
             callback = function()
                 vim.api.nvim_win_close(self.prompt_win, true)
+                self.prompt_win = -1
             end
         }
     )
@@ -926,7 +827,11 @@ function SearchView:show_prompt()
         function()
             local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
             local new_cursor = { cursor[1] - 1, 0 }
-            pcall(vim.api.nvim_win_set_cursor, self.sidebar.win, new_cursor)
+            if new_cursor[1] == 0 then
+                local lines = vim.api.nvim_buf_line_count(self.buf)
+                new_cursor[1] = lines
+            end
+            vim.api.nvim_win_set_cursor(self.sidebar.win, new_cursor)
         end,
         { buffer = self.prompt_buf }
     )
@@ -935,15 +840,132 @@ function SearchView:show_prompt()
         function()
             local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
             local new_cursor = { cursor[1] + 1, 0 }
-            pcall(vim.api.nvim_win_set_cursor, self.sidebar.win, new_cursor)
+            local lines = vim.api.nvim_buf_line_count(self.buf)
+            if new_cursor[1] > lines then new_cursor[1] = 1 end
+            vim.api.nvim_win_set_cursor(self.sidebar.win, new_cursor)
         end,
         { buffer = self.prompt_buf }
     )
     vim.keymap.set(
         "i", "<Cr>",
-        function() self:jump_to_current_symbol() end,
+        function()
+            self:jump_to_current_symbol()
+            sidebar_change_view(self.sidebar, "symbols")
+        end,
         { buffer = self.prompt_buf }
     )
+end
+
+function SearchView:init_prompt_buf()
+    self.prompt_buf = vim.api.nvim_create_buf(false, true)
+
+end
+
+function SearchView:show_prompt_win()
+    if self.prompt_buf == -1 then self:init_prompt_buf() end
+    self:clear_prompt_buf()
+
+    local win = self.sidebar.win
+    local win_h = vim.api.nvim_win_get_height(win)
+    local win_w = vim.api.nvim_win_get_width(win)
+    local opts = {
+        height = 1,
+        width = win_w - 1,
+        border = { "", "", "", "", "", "", "", ">" },
+        style = "minimal",
+        relative = "win",
+        win = win,
+        anchor = "NW",
+        row = win_h - 2,
+        col = 0,
+    }
+    self.prompt_win = vim.api.nvim_open_win(self.prompt_buf, false, opts)
+end
+
+---@class (exact) SearchSymbol
+---@field search_str string
+---@field line integer
+---@field character integer
+
+---@return SearchSymbol[]
+local function _prepare_symbols_for_search(symbols, ft)
+    local t = {}
+    local kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local function _prepare(symbol)
+        if not symbols.states[symbol].visible then return end
+        if symbol.level > 0 then
+            local kind = cfg.kind_for_symbol(kinds, symbol)
+            ---@type SearchSymbol
+            local search_symbol = {
+                search_str = " " .. kind .. " " .. symbol.name,
+                line = symbol.range.start.line,
+                character = symbol.range.start.character,
+            }
+            table.insert(t, search_symbol)
+        end
+        for _, child in ipairs(symbol.children) do
+            _prepare(child)
+        end
+    end
+    _prepare(symbols.root)
+    return t
+end
+
+---@param symbols SearchSymbol[]
+---@return string[]
+local function _search_symbols_to_lines(symbols)
+    local buf_lines = {}
+    for _, symbol in ipairs(symbols) do
+        table.insert(buf_lines, symbol.search_str)
+    end
+    return buf_lines
+end
+
+function SearchView:search()
+    local text = vim.api.nvim_buf_get_lines(self.prompt_buf, 0, 1, false)[1]
+    if string.sub(text, 1, 1) == " " then text = string.sub(text, 2, -1) end
+
+    local symbols = sidebar_current_symbols(self.sidebar)
+    local source_buf = sidebar_source_win_buf(self.sidebar)
+    local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
+    local symbol_strings = _prepare_symbols_for_search(symbols, ft)
+    local buf_lines = {}
+    if #text == 0 then
+        buf_lines = _search_symbols_to_lines(symbol_strings)
+    else
+        self.search_results = vim.fn.matchfuzzy(symbol_strings, text, { key = "search_str" })
+        buf_lines = _search_symbols_to_lines(self.search_results)
+    end
+    if #buf_lines == 0 then table.insert(buf_lines, "") end
+    nvim.buf_set_content(self.buf, buf_lines)
+    vim.api.nvim_win_set_cursor(self.sidebar.win, { 1, 0 })
+end
+
+function SearchView:hide()
+    if vim.api.nvim_win_is_valid(self.prompt_win) then
+        vim.cmd("stopinsert")
+        vim.api.nvim_win_close(self.prompt_win, true)
+        self.prompt_win = -1
+    end
+end
+
+function SearchView:jump_to_current_symbol()
+    local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
+    local symbol = self.search_results[cursor[1]]
+    vim.api.nvim_win_set_cursor(
+        self.sidebar.source_win,
+        { symbol.line + 1, symbol.character }
+    )
+    vim.api.nvim_set_current_win(self.sidebar.source_win)
+    vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
+    flash_highlight_under_cursor(self.sidebar.source_win, 400, 1)
+end
+
+local sidebar_change_view
+
+function SearchView:show_prompt()
+    self:show_prompt_win()
+
 
     vim.keymap.set(
         "n", "s",
@@ -972,6 +994,7 @@ end
 function SearchView:show()
     if self.buf == -1 then
         self.buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(self.buf, "symbols.nvim [" .. tostring(self.sidebar.num) .. "]" .. " (search)")
         nvim.buf_set_modifiable(self.buf, false)
     end
     vim.api.nvim_win_set_buf(self.sidebar.win, self.buf)
@@ -981,6 +1004,7 @@ end
 ---@alias SidebarView "symbols" | "search"
 
 ---@class Sidebar
+---@field num integer Ordering number, used for naming buffers.
 ---@field gs GlobalState
 ---@field deleted boolean
 ---@field win integer
@@ -2246,13 +2270,30 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_on_scroll(sidebar)
-    if sidebar.details.win ~= -1 then
-        sidebar.details:close()
-        sidebar.details:open()
-    end
-    if sidebar.preview.win ~= -1 then
-        sidebar.preview:close()
-        sidebar.preview:open()
+    if sidebar.current_view == "symbols" then
+        if sidebar.details.win ~= -1 then
+            sidebar.details:close()
+            sidebar.details:open()
+        end
+        if sidebar.preview.win ~= -1 then
+            sidebar.preview:close()
+            sidebar.preview:open()
+        end
+    elseif sidebar.current_view == "search" then
+        -- TOOD: finish
+        -- local prompt_win = sidebar.search_view.prompt_win
+        -- if prompt_win ~= -1 then
+        --     local win = sidebar.win
+        --     local win_h = vim.api.nvim_win_get_height(win)
+        --     local win_w = vim.api.nvim_win_get_width(win)
+        --     local opts = {
+        --         height = 1,
+        --         width = win_w - 1,
+        --         row = win_h - 2,
+        --         col = 0,
+        --     }
+        --     vim.api.nvim_win_set_config(prompt_win, opts)
+        -- end
     end
 end
 
@@ -2267,6 +2308,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.source_win = vim.api.nvim_get_current_win()
     sidebar.symbols_retriever = symbols_retriever
 
+    sidebar.num = num
     sidebar.gs = gs
 
     sidebar.preview_config = config.preview
@@ -2294,7 +2336,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     nvim.buf_set_modifiable(sidebar.buf, false)
-    vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")
+    vim.api.nvim_buf_set_name(sidebar.buf, "symbols.nvim [" .. tostring(num) .. "]")
     vim.api.nvim_buf_set_option(sidebar.buf, "filetype", "SymbolsSidebar")
 
     for key, action in pairs(config.keymaps) do
