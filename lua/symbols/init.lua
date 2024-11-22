@@ -7,7 +7,6 @@ local nvim = require("symbols.nvim")
 local _symbol = require("symbols.symbol")
 local Symbol_root = _symbol.Symbol_root
 local Symbol_path = _symbol.Symbol_path
-local Symbol_inspect = _symbol.Symbol_inspect
 local Pos_from_point = _symbol.Pos_from_point
 
 local providers = require("symbols.providers")
@@ -747,6 +746,8 @@ local function reset_cursor(cursor)
     cursor.hidden = false
 end
 
+local sidebar_change_view
+
 ---@class (exact) SearchView
 ---@field sidebar Sidebar
 ---@field buf integer
@@ -768,8 +769,46 @@ function SearchView:new()
     }, self)
 end
 
-function SearchView:clear_prompt_buf()
-    vim.api.nvim_buf_set_lines(self.prompt_buf, 0, -1, false, {" "})
+function SearchView:init(sidebar)
+    self.sidebar = sidebar
+    self:init_buf()
+    self:init_prompt_buf()
+end
+
+function SearchView:init_buf()
+    if vim.api.nvim_buf_is_valid(self.buf) then return end
+
+    self.buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(self.buf, "symbols.nvim [" .. tostring(self.sidebar.num) .. "]" .. " (search)")
+    nvim.buf_set_modifiable(self.buf, false)
+    vim.api.nvim_create_autocmd(
+        { "WinResized" },
+        {
+            group = global_autocmd_group,
+            callback = function(e)
+                vim.print(e)
+                if self.prompt_win == -1 then return end
+                local win = self.sidebar.win
+                local win_h = vim.api.nvim_win_get_height(win)
+                local win_w = vim.api.nvim_win_get_width(win)
+                local opts = {
+                    relative = "win",
+                    win = self.sidebar.win,
+                    height = 1,
+                    width = win_w - 1,
+                    row = win_h - 2,
+                    col = 0,
+                }
+                vim.api.nvim_win_set_config(self.prompt_win, opts)
+            end,
+        }
+    )
+end
+
+function SearchView:init_prompt_buf()
+    if vim.api.nvim_buf_is_valid(self.prompt_buf) then return end
+    self.prompt_buf = vim.api.nvim_create_buf(false, true)
+
     vim.api.nvim_create_autocmd(
         { "TextChangedI" },
         {
@@ -779,7 +818,7 @@ function SearchView:clear_prompt_buf()
         }
     )
     --- TODO remove this autocommand when no longer needed
-    local win_enter_autocmd = vim.api.nvim_create_autocmd(
+    vim.api.nvim_create_autocmd(
         { "WinEnter" },
         {
             group = global_autocmd_group,
@@ -791,7 +830,7 @@ function SearchView:clear_prompt_buf()
             end
         }
     )
-    local win_leave_autocmd = vim.api.nvim_create_autocmd(
+    vim.api.nvim_create_autocmd(
         { "WinLeave" },
         {
             group = global_autocmd_group,
@@ -808,10 +847,7 @@ function SearchView:clear_prompt_buf()
         {
             group = global_autocmd_group,
             buffer = self.prompt_buf,
-            callback = function()
-                vim.api.nvim_win_close(self.prompt_win, true)
-                self.prompt_win = -1
-            end
+            callback = function() self:hide() end
         }
     )
 
@@ -856,13 +892,11 @@ function SearchView:clear_prompt_buf()
     )
 end
 
-function SearchView:init_prompt_buf()
-    self.prompt_buf = vim.api.nvim_create_buf(false, true)
-
+function SearchView:clear_prompt_buf()
+    vim.api.nvim_buf_set_lines(self.prompt_buf, 0, -1, false, {" "})
 end
 
 function SearchView:show_prompt_win()
-    if self.prompt_buf == -1 then self:init_prompt_buf() end
     self:clear_prompt_buf()
 
     local win = self.sidebar.win
@@ -961,8 +995,6 @@ function SearchView:jump_to_current_symbol()
     flash_highlight_under_cursor(self.sidebar.source_win, 400, 1)
 end
 
-local sidebar_change_view
-
 function SearchView:show_prompt()
     self:show_prompt_win()
 
@@ -992,13 +1024,19 @@ function SearchView:show_prompt()
 end
 
 function SearchView:show()
-    if self.buf == -1 then
-        self.buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_name(self.buf, "symbols.nvim [" .. tostring(self.sidebar.num) .. "]" .. " (search)")
-        nvim.buf_set_modifiable(self.buf, false)
-    end
     vim.api.nvim_win_set_buf(self.sidebar.win, self.buf)
     self:show_prompt()
+end
+
+function SearchView:destroy()
+    if vim.api.nvim_buf_is_valid(self.buf) then
+        vim.api.nvim_buf_delete(self.buf, { force = true })
+        self.buf = -1
+    end
+    if vim.api.nvim_buf_is_valid(self.prompt_buf) then
+        vim.api.nvim_buf_delete(self.prompt_buf, { force = true })
+        self.prompt_buf = -1
+    end
 end
 
 ---@alias SidebarView "symbols" | "search"
@@ -1044,7 +1082,7 @@ local function sidebar_new_obj()
         win = -1,
         win_dir = "right",
         win_settings = WinSettings_new(),
-        current_view = "search",
+        current_view = "symbols",
         search_view = SearchView:new(),
         buf = -1,
         source_win = -1,
@@ -1363,6 +1401,7 @@ local function sidebar_destroy(sidebar)
         vim.api.nvim_buf_delete(sidebar.buf, { force = true })
         sidebar.buf = -1
     end
+    sidebar.search_view:destroy()
     sidebar.source_win = -1
     sidebar.deleted = true
 end
@@ -2270,30 +2309,14 @@ end
 
 ---@param sidebar Sidebar
 local function sidebar_on_scroll(sidebar)
-    if sidebar.current_view == "symbols" then
-        if sidebar.details.win ~= -1 then
-            sidebar.details:close()
-            sidebar.details:open()
-        end
-        if sidebar.preview.win ~= -1 then
-            sidebar.preview:close()
-            sidebar.preview:open()
-        end
-    elseif sidebar.current_view == "search" then
-        -- TOOD: finish
-        -- local prompt_win = sidebar.search_view.prompt_win
-        -- if prompt_win ~= -1 then
-        --     local win = sidebar.win
-        --     local win_h = vim.api.nvim_win_get_height(win)
-        --     local win_w = vim.api.nvim_win_get_width(win)
-        --     local opts = {
-        --         height = 1,
-        --         width = win_w - 1,
-        --         row = win_h - 2,
-        --         col = 0,
-        --     }
-        --     vim.api.nvim_win_set_config(prompt_win, opts)
-        -- end
+    -- this function is used only with "symbols" view
+    if sidebar.details.win ~= -1 then
+        sidebar.details:close()
+        sidebar.details:open()
+    end
+    if sidebar.preview.win ~= -1 then
+        sidebar.preview:close()
+        sidebar.preview:open()
     end
 end
 
@@ -2318,7 +2341,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.details.sidebar = sidebar
     sidebar.details.show_debug_info = debug
 
-    sidebar.search_view.sidebar = sidebar
+    sidebar.search_view:init(sidebar)
 
     sidebar.show_inline_details = config.show_inline_details
     sidebar.details.auto_show = config.show_details_pop_up
@@ -2365,7 +2388,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
                 if (
                     not sidebar.cursor_follow or
                     not sidebar_visible(sidebar) or
-                    sidebar.view ~= "symbols"
+                    sidebar.current_view ~= "symbols"
                 ) then return end
                 local win = vim.api.nvim_get_current_win()
                 if win ~= sidebar.source_win then return end
