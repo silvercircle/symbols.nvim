@@ -754,6 +754,8 @@ local sidebar_change_view
 ---@field prompt_buf integer
 ---@field prompt_win integer
 ---@field search_results SearchSymbol[]
+---@field history string[]
+---@field history_idx integer
 local SearchView = {}
 ---@diagnostic disable-next-line
 SearchView.__index = SearchView
@@ -766,6 +768,8 @@ function SearchView:new()
         prompt_buf = -1,
         prompt_win = -1,
         search_results = {},
+        history = {},
+        history_idx = -1
     }, self)
 end
 
@@ -785,8 +789,7 @@ function SearchView:init_buf()
         { "WinResized" },
         {
             group = global_autocmd_group,
-            callback = function(e)
-                vim.print(e)
+            callback = function()
                 if self.prompt_win == -1 then return end
                 local win = self.sidebar.win
                 local win_h = vim.api.nvim_win_get_height(win)
@@ -885,15 +888,44 @@ function SearchView:init_prompt_buf()
     vim.keymap.set(
         "i", "<Cr>",
         function()
+            self:save_history()
             self:jump_to_current_symbol()
             sidebar_change_view(self.sidebar, "symbols")
         end,
         { buffer = self.prompt_buf }
     )
+    vim.keymap.set(
+        "i", "<C-j>",
+        function()
+            local text = self:next_item_from_history()
+            self:set_prompt_buf(text)
+            vim.print(self.history_idx)
+        end,
+        { buffer = self.prompt_buf }
+    )
+    vim.keymap.set(
+        "i", "<C-k>",
+        function()
+            local text = self:prev_item_from_history()
+            self:set_prompt_buf(text)
+            vim.print(self.history_idx)
+        end,
+        { buffer = self.prompt_buf }
+    )
+end
+
+---@param value string
+function SearchView:set_prompt_buf(value)
+    value = " " .. value
+    vim.api.nvim_buf_set_lines(self.prompt_buf, 0, -1, false, { value })
+    if vim.api.nvim_win_is_valid(self.prompt_win) then
+        vim.api.nvim_win_set_cursor(self.prompt_win, { 1, #value })
+    end
 end
 
 function SearchView:clear_prompt_buf()
-    vim.api.nvim_buf_set_lines(self.prompt_buf, 0, -1, false, {" "})
+    self:set_prompt_buf("")
+    self.history_idx = -1
 end
 
 function SearchView:show_prompt_win()
@@ -955,10 +987,42 @@ local function _search_symbols_to_lines(symbols)
     return buf_lines
 end
 
-function SearchView:search()
+---@return string
+function SearchView:get_prompt_text()
     local text = vim.api.nvim_buf_get_lines(self.prompt_buf, 0, 1, false)[1]
-    if string.sub(text, 1, 1) == " " then text = string.sub(text, 2, -1) end
+    return vim.trim(text)
+end
 
+function SearchView:save_history()
+    local text = self:get_prompt_text()
+    if self.history[#self.history] ~= text then
+        table.insert(self.history, text)
+    end
+end
+
+---@return string
+function SearchView:prev_item_from_history()
+    assert(self.history_idx < #self.history, "SearchView.history_idx too large")
+    if #self.history == 0 then return "" end
+    if self.history_idx + 1 == #self.history then
+        return self.history[1]
+    end
+    self.history_idx = self.history_idx + 1
+    return self.history[#self.history - self.history_idx]
+end
+
+---@return string
+function SearchView:next_item_from_history()
+    if self.history_idx <= 0 then
+        self.history_idx = -1
+        return ""
+    end
+    self.history_idx = self.history_idx - 1
+    return self.history[#self.history - self.history_idx]
+end
+
+function SearchView:search()
+    local text = self:get_prompt_text()
     local symbols = sidebar_current_symbols(self.sidebar)
     local source_buf = sidebar_source_win_buf(self.sidebar)
     local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
@@ -998,7 +1062,6 @@ end
 function SearchView:show_prompt()
     self:show_prompt_win()
 
-
     vim.keymap.set(
         "n", "s",
         function()
@@ -1015,7 +1078,11 @@ function SearchView:show_prompt()
     )
     vim.keymap.set(
         "n", "<Cr>",
-        function() self:jump_to_current_symbol() end,
+        function()
+            self:save_history()
+            self:jump_to_current_symbol()
+            sidebar_change_view(self.sidebar, "symbols")
+        end,
         { buffer = self.buf }
     )
 
