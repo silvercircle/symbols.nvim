@@ -754,6 +754,7 @@ local sidebar_change_view
 ---@field prompt_buf integer
 ---@field prompt_win integer
 ---@field search_results SearchSymbol[]
+---@field flat_symbols Symbol[]
 ---@field history string[]
 ---@field history_idx integer
 local SearchView = {}
@@ -768,6 +769,7 @@ function SearchView:new()
         prompt_buf = -1,
         prompt_win = -1,
         search_results = {},
+        flat_symbols = {},
         history = {},
         history_idx = -1
     }, self)
@@ -968,45 +970,6 @@ function SearchView:show_prompt_win()
     self.prompt_win = vim.api.nvim_open_win(self.prompt_buf, false, opts)
 end
 
----@class (exact) SearchSymbol
----@field search_str string
----@field line integer
----@field character integer
-
----@return SearchSymbol[]
-local function _prepare_symbols_for_search(symbols, ft)
-    local t = {}
-    local kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
-    local function _prepare(symbol)
-        if not symbols.states[symbol].visible then return end
-        if symbol.level > 0 then
-            local kind = cfg.kind_for_symbol(kinds, symbol)
-            ---@type SearchSymbol
-            local search_symbol = {
-                search_str = " " .. kind .. " " .. symbol.name,
-                line = symbol.range.start.line,
-                character = symbol.range.start.character,
-            }
-            table.insert(t, search_symbol)
-        end
-        for _, child in ipairs(symbol.children) do
-            _prepare(child)
-        end
-    end
-    _prepare(symbols.root)
-    return t
-end
-
----@param symbols SearchSymbol[]
----@return string[]
-local function _search_symbols_to_lines(symbols)
-    local buf_lines = {}
-    for _, symbol in ipairs(symbols) do
-        table.insert(buf_lines, symbol.search_str)
-    end
-    return buf_lines
-end
-
 ---@return string
 function SearchView:get_prompt_text()
     local text = vim.api.nvim_buf_get_lines(self.prompt_buf, 0, 1, false)[1]
@@ -1041,21 +1004,87 @@ function SearchView:next_item_from_history()
     return self.history[#self.history - self.history_idx]
 end
 
+---@class (exact) SearchSymbol
+---@field s string
+---@field i integer
+
+---@return SearchSymbol[], Symbol[]
+local function _prepare_symbols_for_search(symbols, ft)
+    local search_symbols = {}
+    local flat_symbols = {}
+    local kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local function _prepare(symbol)
+        if not symbols.states[symbol].visible then return end
+        if symbol.level > 0 then
+            local kind = cfg.kind_for_symbol(kinds, symbol)
+            local search_str = " " .. kind .. " " .. symbol.name
+            ---@type SearchSymbol
+            local search_symbol = { s = search_str, i = #flat_symbols+1 }
+            table.insert(search_symbols, search_symbol)
+            table.insert(flat_symbols, symbol)
+        end
+        for _, child in ipairs(symbol.children) do
+            _prepare(child)
+        end
+    end
+    _prepare(symbols.root)
+    return search_symbols, flat_symbols
+end
+
+---@param symbols SearchSymbol[]
+---@return string[]
+local function _search_symbols_to_lines(symbols)
+    local buf_lines = {}
+    for _, symbol in ipairs(symbols) do
+        table.insert(buf_lines, symbol.s)
+    end
+    return buf_lines
+end
+
+---@param search_symbols SearchSymbol[]
+---@param flat_symbols Symbol[]
+---@return Highlight[]
+function SearchView:_search_symbols_highlights(search_symbols, flat_symbols)
+    local highlights = {} ---@type Highlight[]
+    local symbols = sidebar_current_symbols(self.sidebar)
+    local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
+    local highlights_config = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
+    local kinds_display_config = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local kinds_default_config = symbols.provider_config.kinds.default
+    for line_nr, search_symbol in ipairs(search_symbols) do
+        local symbol = flat_symbols[search_symbol.i]
+        local kind_display = cfg.kind_for_symbol(kinds_display_config, symbol, kinds_default_config)
+        local highlight = nvim.Highlight:new({
+            group = highlights_config[symbol.kind],
+            line = line_nr,
+            col_start = 1,
+            col_end = #kind_display + 1,
+        })
+        table.insert(highlights, highlight)
+    end
+    return highlights
+end
+
 function SearchView:search()
     local text = self:get_prompt_text()
     local symbols = sidebar_current_symbols(self.sidebar)
     local source_buf = sidebar_source_win_buf(self.sidebar)
     local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
-    local symbol_strings = _prepare_symbols_for_search(symbols, ft)
+    local search_symbols
+    search_symbols, self.flat_symbols = _prepare_symbols_for_search(symbols, ft)
     local buf_lines = {}
+    local highlights = {}
     if #text == 0 then
-        buf_lines = _search_symbols_to_lines(symbol_strings)
+        buf_lines = _search_symbols_to_lines(search_symbols)
+        highlights = self:_search_symbols_highlights(search_symbols, self.flat_symbols)
     else
-        self.search_results = vim.fn.matchfuzzy(symbol_strings, text, { key = "search_str" })
+        self.search_results = vim.fn.matchfuzzy(search_symbols, text, { key = "s" })
         buf_lines = _search_symbols_to_lines(self.search_results)
+        highlights = self:_search_symbols_highlights(self.search_results, self.flat_symbols)
     end
     if #buf_lines == 0 then table.insert(buf_lines, "") end
     nvim.buf_set_content(self.buf, buf_lines)
+    for _, highlight in ipairs(highlights) do highlight:apply(self.buf) end
     vim.api.nvim_win_set_cursor(self.sidebar.win, { 1, 0 })
 end
 
@@ -1069,10 +1098,11 @@ end
 
 function SearchView:jump_to_current_symbol()
     local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
-    local symbol = self.search_results[cursor[1]]
+    local search_symbol = self.search_results[cursor[1]]
+    local symbol = self.flat_symbols[search_symbol.i]
     vim.api.nvim_win_set_cursor(
         self.sidebar.source_win,
-        { symbol.line + 1, symbol.character }
+        { symbol.range.start.line + 1, symbol.range.start.character }
     )
     vim.api.nvim_set_current_win(self.sidebar.source_win)
     vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
