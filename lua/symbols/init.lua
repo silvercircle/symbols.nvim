@@ -785,6 +785,7 @@ function SearchView:init_buf()
     self.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(self.buf, "symbols.nvim [" .. tostring(self.sidebar.num) .. "]" .. " (search)")
     nvim.buf_set_modifiable(self.buf, false)
+
     vim.api.nvim_create_autocmd(
         { "WinResized" },
         {
@@ -805,6 +806,21 @@ function SearchView:init_buf()
                 vim.api.nvim_win_set_config(self.prompt_win, opts)
             end,
         }
+    )
+
+    vim.keymap.set(
+        "n", "q",
+        function() sidebar_close(self.sidebar) end,
+        { buffer = self.buf }
+    )
+    vim.keymap.set(
+        "n", "o",
+        function()
+            self:save_history()
+            self:jump_to_current_symbol()
+            vim.api.nvim_set_current_win(self.sidebar.win)
+        end,
+        { buffer = self.buf }
     )
 end
 
@@ -890,7 +906,11 @@ function SearchView:init_prompt_buf()
         function()
             self:save_history()
             self:jump_to_current_symbol()
-            sidebar_change_view(self.sidebar, "symbols")
+            if self.sidebar.close_on_goto then
+                sidebar_close(self.sidebar)
+            else
+                sidebar_change_view(self.sidebar, "symbols")
+            end
         end,
         { buffer = self.prompt_buf }
     )
@@ -1081,7 +1101,11 @@ function SearchView:show_prompt()
         function()
             self:save_history()
             self:jump_to_current_symbol()
-            sidebar_change_view(self.sidebar, "symbols")
+            if self.sidebar.close_on_goto then
+                sidebar_close(self.sidebar)
+            else
+                sidebar_change_view(self.sidebar, "symbols")
+            end
         end,
         { buffer = self.buf }
     )
@@ -1434,16 +1458,16 @@ local function sidebar_open(sidebar)
     end
 end
 
----@param sidebar Sidebar
-local function sidebar_preview_close(sidebar)
+local function symbols_view_close(sidebar)
     sidebar.preview:close()
+    sidebar.details:close()
 end
 
 --- Restore window state to default. Useful when opening a file in the sidebar window.
 ---@param sidebar Sidebar
 local function sidebar_win_restore(sidebar)
-    sidebar_preview_close(sidebar)
-    sidebar.details:close()
+    symbols_view_close(sidebar)
+    sidebar.search_view:hide()
     WinSettings_apply(sidebar.win, sidebar.win_settings)
     reset_cursor(sidebar.gs.cursor)
     sidebar.win = -1
@@ -1452,8 +1476,7 @@ end
 
 sidebar_close = function(sidebar)
     if not sidebar_visible(sidebar) then return end
-    sidebar_preview_close(sidebar)
-    sidebar.details:close()
+    symbols_view_close(sidebar)
     sidebar.search_view:hide()
     if vim.api.nvim_win_is_valid(sidebar.win) then
         vim.api.nvim_win_close(sidebar.win, true)
@@ -2813,17 +2836,22 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
     )
 
     vim.api.nvim_create_autocmd(
-        { "BufHidden" },
+        { "BufEnter" },
         {
             group = global_autocmd_group,
             callback = function(t) -- TODO fix
-                -- local buf = tonumber(t.buf)
-                -- for _, sidebar in ipairs(sidebars) do
-                --     if sidebar.buf == buf and then
-                --         sidebar_win_restore(sidebar)
-                --         return
-                --     end
-                -- end
+                local win = vim.api.nvim_get_current_win()
+                local buf = tonumber(t.buf)
+                for _, sidebar in ipairs(sidebars) do
+                    if (
+                        sidebar.win == win
+                        and sidebar.buf ~= buf
+                        and sidebar.search_view.buf ~= buf
+                    ) then
+                        sidebar_win_restore(sidebar)
+                        return
+                    end
+                end
             end
         }
     )
