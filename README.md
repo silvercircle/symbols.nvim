@@ -6,9 +6,9 @@ Sidebar with a list of symbols. Gives an overview of a file and allows quick
 navigation.
 
 > **Warning**
-> `symbols.nvim` is in beta. You may encounter bugs and there will be some
-> breaking changes. For a more stable experience use tags (e.g. "v0.1.0") with
-> you plugin manager.
+>
+> `symbols.nvim` is in beta. You may encounter bugs and breaking changes.
+> For a more stable experience use tags (e.g. "v0.1.0") with you plugin manager.
 
 https://github.com/user-attachments/assets/a63dd071-882c-4a9c-ac3e-3abe775ef7db
 
@@ -16,6 +16,7 @@ https://github.com/user-attachments/assets/a63dd071-882c-4a9c-ac3e-3abe775ef7db
 
 - **Listing Symbols** - duh. Uses LSP servers and treesitter parsers which have to
   be configured by the user.
+- **Fuzzy Search** - fuzzy search symbols directly from the sidebar
 - **Preview Window** - glance at the code before committing to your next action.
   You can also edit the file in the preview window.
 - **Inline Details** - symbol details can be displayed inline. Those details are
@@ -82,6 +83,14 @@ over Treesitter.
 ## Help
 
 Press `?` in the sidebar to see the available keymaps or run `:help symbols`.
+
+## Fuzzy Search
+
+Press `s` to start a fuzzy search. Use `<S-Tab>` and `<Tab>` to go up and down
+the search results list without leaving the prompt window or navigate the search
+history with `<C-j>` and `<C-k>`. Go to symbol with `<Cr>` or press `<Esc>` to
+focus the search results window and peek symbols with `o`. Press `<Esc>` again
+to go back to the symbols list or press `q` to close the sidebar.
 
 ## Preview Window
 
@@ -306,6 +315,9 @@ Default config below.
             ["zm"] = "fold-one-level",
             -- Folds all symbols in the sidebar.
             ["zM"] = "fold-all",
+
+            -- Start fuzzy search.
+            ["s"] = "search",
 
             -- Toggles inline details (see sidebar.show_inline_details).
             ["td"] = "toggle-inline-details",

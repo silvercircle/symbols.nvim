@@ -6,6 +6,7 @@ Table of Contents                                  *symbols-table-of-contents*
 3. Supported Languages                           |symbols-supported-languages|
 4. Tips                                                         |symbols-tips|
   - Help                                                   |symbols-tips-help|
+  - Fuzzy Search                                   |symbols-tips-fuzzy-search|
   - Preview Window                               |symbols-tips-preview-window|
   - Keymaps                                             |symbols-tips-keymaps|
   - Dynamic Settings                           |symbols-tips-dynamic-settings|
@@ -71,6 +72,15 @@ over Treesitter.
 HELP                                                       *symbols-tips-help*
 
 Press `?` in the sidebar to see the available keymaps or run `:help symbols`.
+
+
+FUZZY SEARCH                                       *symbols-tips-fuzzy-search*
+
+Press `s` to start a fuzzy search. Use `<S-Tab>` and `<Tab>` to go up and down
+the search results list without leaving the prompt window or navigate the
+search history with `<C-j>` and `<C-k>`. Go to symbol with `<Cr>` or press
+`<Esc>` to focus the search results window and peek symbols with `o`. Press
+`<Esc>` again to go back to the symbols list or press `q` to close the sidebar.
 
 
 PREVIEW WINDOW                                   *symbols-tips-preview-window*
@@ -306,6 +316,9 @@ Default config below.
                 ["zm"] = "fold-one-level",
                 -- Folds all symbols in the sidebar.
                 ["zM"] = "fold-all",
+    
+                -- Start fuzzy search.
+                ["s"] = "search",
     
                 -- Toggles inline details (see sidebar.show_inline_details).
                 ["td"] = "toggle-inline-details",

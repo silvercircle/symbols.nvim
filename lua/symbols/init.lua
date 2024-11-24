@@ -1,19 +1,17 @@
 local cfg = require("symbols.config")
+local utils = require("symbols.utils")
+local log = require("symbols.log")
+
+local nvim = require("symbols.nvim")
+
+local _symbol = require("symbols.symbol")
+local Symbol_root = _symbol.Symbol_root
+local Symbol_path = _symbol.Symbol_path
+local Pos_from_point = _symbol.Pos_from_point
+
+local providers = require("symbols.providers")
 
 local M = {}
-
-local MAX_INT = 2147483647
-
----@param tbl table
----@return table
-local function reverse_map(tbl)
-    local rev = {}
-    for k, v in pairs(tbl) do
-        assert(rev[v] == nil, "to reverse a map values must be unique")
-        rev[v] = k
-    end
-    return rev
-end
 
 ---@type table<string, boolean>
 local cmds = {}
@@ -34,139 +32,7 @@ local function remove_user_commands()
     end
 end
 
----@type integer
-local DEFAULT_LOG_LEVEL = vim.log.levels.ERROR
----@type integer
-local LOG_LEVEL = DEFAULT_LOG_LEVEL
-
----@type table<integer, string>
-local LOG_LEVEL_STRING = {
-    [vim.log.levels.ERROR] = "ERROR",
-    [vim.log.levels.WARN] = "WARN",
-    [vim.log.levels.INFO] = "INFO",
-    [vim.log.levels.DEBUG] = "DEBUG",
-    [vim.log.levels.TRACE] = "TRACE",
-}
-
----@type table<integer, string>
-local LOG_LEVEL_CMD_STRING = {
-    [vim.log.levels.ERROR] = "error",
-    [vim.log.levels.WARN] = "warning",
-    [vim.log.levels.INFO] = "info",
-    [vim.log.levels.DEBUG] = "debug",
-    [vim.log.levels.TRACE] = "trace",
-    [vim.log.levels.OFF] = "off",
-}
-
----@type table<string, integer>
-local CMD_STRING_LOG_LEVEL = reverse_map(LOG_LEVEL_CMD_STRING)
-
----@param msg string
----@param level any
-local function _log(msg, level)
-    if level >= LOG_LEVEL then
-        local date = os.date("%Y/%m/%d %H:%M:%S")
-        local fun = ""
-        if level == vim.log.levels.TRACE then
-            local name = debug.getinfo(3, "n").name or "<anonymous>"
-            fun = "(" .. name .. ") "
-        end
-        local _msg = table.concat({"[", date, "] ", LOG_LEVEL_STRING[level], " ", fun, msg}, "")
-        vim.notify(_msg, level)
-    end
-end
-
----@alias LogFun fun(msg: string | nil)
-
-local log = {
-    ---@type LogFun
-    error = function(msg) _log(msg or "", vim.log.levels.ERROR) end,
-    ---@type LogFun
-    warn = function(msg) _log(msg or "", vim.log.levels.WARN) end,
-    ---@type LogFun
-    info = function(msg) _log(msg or "", vim.log.levels.INFO) end,
-    ---@type LogFun
-    debug = function(msg) _log(msg or "", vim.log.levels.DEBUG) end,
-    ---@type LogFun
-    trace = function(msg) _log(msg or "", vim.log.levels.TRACE) end,
-}
-
----@param name string
----@param desc string
-local function create_change_log_level_user_command(name, desc)
-    local log_levels = vim.tbl_keys(CMD_STRING_LOG_LEVEL)
-    create_user_command(
-        name,
-        function(e)
-            local arg = e.fargs[1]
-            local new_log_level = CMD_STRING_LOG_LEVEL[arg]
-            if new_log_level == nil then
-                log.error("Invalid log level: " .. arg)
-            else
-                LOG_LEVEL = new_log_level
-            end
-        end,
-        {
-            nargs = 1,
-            complete = function(arg, _)
-                local suggestions = {}
-                for _, log_level in ipairs(log_levels) do
-                    if vim.startswith(log_level, arg) then
-                        table.insert(suggestions, log_level)
-                    end
-                end
-                return suggestions
-            end,
-            desc = desc
-        }
-    )
-end
-
 local global_autocmd_group = vim.api.nvim_create_augroup("Symbols", { clear = true })
-
----@param arr1 table
----@param arr2 table
----@return table
-local function array_diff(arr1, arr2)
-    local diff = {}
-    for _, v in ipairs(arr1) do
-        if not vim.tbl_contains(arr2, v) then
-            table.insert(diff, v)
-        end
-    end
-    return diff
-end
-
----@param array string[]
----@param enum table<string, string>
----@param array_name string
-local function assert_array_is_enum(array, enum, array_name)
-    local expected = vim.tbl_values(enum)
-    local actual_extra = array_diff(array, expected)
-    if #actual_extra > 0 then
-        assert(false, "Invalid values in array " .. array_name .. ": " .. vim.inspect(actual_extra))
-    end
-    local expected_extra = array_diff(expected, array)
-    if #expected_extra > 0 then
-        assert(false, "Missing values in array " .. array_name .. ": " .. vim.inspect(expected_extra))
-    end
-end
-
----@param table_ table<string, any>
----@param enum table<string, string>
----@param table_name string
-local function assert_keys_are_enum(table_, enum, table_name)
-    local actual = vim.tbl_keys(table_)
-    local expected = vim.tbl_values(enum)
-    local actual_extra = array_diff(actual, expected)
-    if #actual_extra > 0 then
-        assert(false, "Invalid keys in table " .. table_name .. ": " .. vim.inspect(actual_extra))
-    end
-    local expected_extra = array_diff(expected, actual)
-    if #expected_extra > 0 then
-        assert(false, "Missing keys in table " .. table_name .. ": " .. vim.inspect(expected_extra))
-    end
-end
 
 ---@type table<integer, integer>
 local _prev_flash_highlight_ns = {}
@@ -200,618 +66,80 @@ local function flash_highlight_under_cursor(win, duration_ms, lines)
     )
 end
 
----@param buf integer
----@param value boolean
-local function buf_modifiable(buf, value)
-    vim.api.nvim_set_option_value("modifiable", value, { buf = buf })
-end
-
----@param buf integer
----@param lines string[]
-local function buf_set_content(buf, lines)
-    buf_modifiable(buf, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    buf_modifiable(buf, false)
-end
-
----@param win integer
----@param name string
----@param value any
-local function win_set_option(win, name, value)
-    vim.api.nvim_set_option_value(name, value, { win = win })
-end
-
-local SIDEBAR_HL_NS = vim.api.nvim_create_namespace("SymbolsSidebarHl")
 local SIDEBAR_EXT_NS = vim.api.nvim_create_namespace("SymbolsSidebarExt")
-
----@class Highlight
----@field group string
----@field line integer  -- one-indexed
----@field col_start integer
----@field col_end integer
-
----@param buf integer
----@param hl Highlight
-local function Highlight_apply(buf, hl)
-    vim.api.nvim_buf_add_highlight(
-        buf, SIDEBAR_HL_NS, hl.group, hl.line-1, hl.col_start, hl.col_end
-    )
-end
-
----@class Pos
----@field line integer
----@field character integer
-
----@param point [integer, integer]
----@return Pos
-local function Pos_from_point(point)
-    return { line = point[1] - 1, character = point[2] }
-end
-
----@class Range
----@field start Pos
----@field end Pos
-
----@class Symbol
----@field kind string
----@field name string
----@field detail string
----@field level integer
----@field parent Symbol | nil
----@field children Symbol[]
----@field range Range
----@field selectionRange Range
-
----@return Symbol
-local function Symbol_root()
-    return {
-        kind = "root",
-        name = "<root>",
-        detail = "",
-        level = 0,
-        parent = nil,
-        children = {},
-        range = {
-            start = { line = 0, character = 0 },
-            ["end"] = { line = -1, character = -1 }
-        },
-        selectionRange = {
-            start = { line = 0, character = 0 },
-            ["end"] = { line = -1, character = -1 }
-        },
-    }
-end
-
----@param symbol Symbol
----@return string[]
-local function Symbol_path(symbol)
-    local path = {}
-    while symbol.level > 0 do
-        path[symbol.level] = symbol.name
-        symbol = symbol.parent
-        assert(symbol ~= nil)
-    end
-    return path
-end
-
 
 ---@alias RefreshSymbolsFun fun(symbols: Symbol, provider_name: string, provider_config: table)
 ---@alias KindToHlGroupFun fun(kind: string): string
 ---@alias KindToDisplayFun fun(kind: string): string
----@alias ProviderGetSymbols fun(cache: any, buf: integer): boolean, Symbol?
-
----@class Provider
----@field name string
----@field init (fun(cache: table, config: table)) | nil
----@field supports fun(cache: table, buf: integer): boolean
----@field async_get_symbols (fun(cache: any, buf: integer, refresh_symbols: fun(root: Symbol), on_fail: fun(), on_timeout: fun())) | nil
----@field get_symbols ProviderGetSymbols | nil
-
----@enum LspSymbolKind
-local LspSymbolKind = {
-	File = 1,
-	Module = 2,
-	Namespace = 3,
-	Package = 4,
-	Class = 5,
-	Method = 6,
-	Property = 7,
-	Field = 8,
-	Constructor = 9,
-	Enum = 10,
-	Interface = 11,
-	Function = 12,
-	Variable = 13,
-	Constant = 14,
-	String = 15,
-	Number = 16,
-	Boolean = 17,
-	Array = 18,
-	Object = 19,
-	Key = 20,
-	Null = 21,
-	EnumMember = 22,
-	Struct = 23,
-	Event = 24,
-	Operator = 25,
-	TypeParameter = 26,
-}
-
----@type table<LspSymbolKind, string>
-local LspSymbolKindString = reverse_map(LspSymbolKind)
-
----@param lsp_symbol any
----@param parent Symbol?
----@param level integer
-local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
-    lsp_symbol.parent = parent
-    lsp_symbol.detail = lsp_symbol.detail or ""
-    lsp_symbol.children = lsp_symbol.children or {}
-    lsp_symbol.kind = LspSymbolKindString[lsp_symbol.kind]
-    lsp_symbol.level = level
-    for _, child in ipairs(lsp_symbol.children) do
-        rec_tidy_lsp_symbol(child, lsp_symbol, level + 1)
-    end
-end
-
----@type Provider
-local LspProvider = {
-    name = "lsp",
-    init = function(cache, config)
-        cache.request_timeout = config.timeout_ms
-    end,
-    supports = function(cache, buf)
-        local clients = vim.lsp.get_clients({ bufnr = buf, method = "documentSymbolProvider" })
-        cache.client = clients[1]
-        return #clients > 0
-    end,
-    async_get_symbols = function(cache, buf, refresh_symbols, on_fail, on_timeout)
-        local got_symbols = false
-
-        ---@param sym1 Symbol
-        ---@param sym2 Symbol
-        ---@return boolean
-        local function comp_range(sym1, sym2)
-            local s1 = sym1.range.start
-            local s2 = sym2.range.start
-            return (
-                s1.line < s2.line
-                or (s1.line == s2.line and s1.character < s2.character)
-            )
-        end
-
-        ---@param symbol Symbol
-        local function sort_symbols(symbol)
-            table.sort(symbol.children, comp_range)
-            for _, child in ipairs(symbol.children) do
-                sort_symbols(child)
-            end
-        end
-
-        local function handler(err, result, _, _)
-            got_symbols = true
-            if err ~= nil then
-                on_fail()
-                return
-            end
-            local root = Symbol_root()
-            root.children = result
-            rec_tidy_lsp_symbol(root, nil, 0)
-            sort_symbols(root)
-            refresh_symbols(root)
-        end
-
-        local params = { textDocument = vim.lsp.util.make_text_document_params(buf), }
-        local ok, request_id = cache.client.request("textDocument/documentSymbol", params, handler)
-        if not ok then on_fail() end
-
-        vim.defer_fn(
-            function()
-                if got_symbols then return end
-                cache.client.cancel_request(request_id)
-                on_timeout()
-            end,
-            cache.request_timeout
-        )
-    end,
-    get_symbols = nil,
-}
-
----@param ts_node any
----@param buf integer
----@return string
-local function get_ts_node_text(ts_node, buf)
-    local sline, scol, eline, ecol = ts_node:range()
-    return vim.api.nvim_buf_get_text(buf, sline, scol, eline, ecol, {})[1]
-end
-
----@type ProviderGetSymbols
-local function vimdoc_get_symbols(cache, buf)
-    local rootNode = cache.parser:parse()[1]:root()
-    local queryString = [[
-        [
-            (h1 (heading) @H1)
-            (h2 (heading) @H2)
-            (h3 (heading) @H3)
-            (tag text: (word) @Tag)
-        ]
-    ]]
-    local query = vim.treesitter.query.parse("vimdoc", queryString)
-    local kind_to_capture_level = { root = 0, H1 = 1, H2 = 2, H3 = 3, Tag = 4 }
-    local root = Symbol_root()
-    local current = root
-    for id, node, _, _ in query:iter_captures(rootNode, 0) do
-        local kind = query.captures[id]
-        local row1, col1, row2, col2 = node:range()
-        local name = vim.api.nvim_buf_get_text(buf, row1, col1, row2, col2, {})[1]
-        local level = kind_to_capture_level[kind]
-        local range = {
-            ["start"] = { line = row1, character = col1 },
-            ["end"] = { line = row2, character = col2 },
-        }
-        if (
-            kind == "Tag" and current.kind == "Tag"
-            and range.start.line == current.range.start.line
-        ) then
-            current.name = current.name .. " " .. name
-        else
-            while level <= kind_to_capture_level[current.kind] do
-                current = current.parent
-                assert(current ~= nil)
-            end
-            ---@type Symbol
-            local new = {
-                kind = kind,
-                name = name,
-                detail = "",
-                level = level,
-                parent = current,
-                children = {},
-                range = range,
-                selectionRange = range,
-            }
-            table.insert(current.children, new)
-            current = new
-        end
-    end
-
-    local function fix_range_ends(node, range_end)
-        if node.kind == "Tag" then return end
-        node.range["end"].line = range_end
-        node.selectionRange["end"].line = range_end
-        for i, child in ipairs(node.children) do
-            local new_range_end = range_end
-            if node.children[i+1] ~= nil then
-                new_range_end = node.children[i+1].range["start"].line - 1 or range_end
-            end
-            fix_range_ends(child, new_range_end)
-        end
-    end
-
-    local line_count = vim.api.nvim_buf_line_count(buf)
-    fix_range_ends(root, line_count)
-
-    return true, root
-end
-
----@type ProviderGetSymbols
-local function markdown_get_symbols(cache, _)
-    local rootNode = cache.parser:parse()[1]:root()
-    local queryString = [[
-        [
-            (atx_heading (atx_h1_marker) heading_content: (_) @H1)
-            (atx_heading (atx_h2_marker) heading_content: (_) @H2)
-            (atx_heading (atx_h3_marker) heading_content: (_) @H3)
-            (atx_heading (atx_h4_marker) heading_content: (_) @H4)
-            (atx_heading (atx_h5_marker) heading_content: (_) @H5)
-            (atx_heading (atx_h6_marker) heading_content: (_) @H6)
-        ]
-    ]]
-    local query = vim.treesitter.query.parse("markdown", queryString)
-    local capture_group_to_level = { H1 = 1, H2 = 2, H3 = 3, H4 = 4, H5 = 5, H6 = 6 }
-    local root = Symbol_root()
-    local current = root
-    for id, node, _, _ in query:iter_captures(rootNode, 0) do
-        local kind = query.captures[id]
-        local row1, col1, row2, col2 = node:range()
-        local name = vim.api.nvim_buf_get_text(0, row1, col1, row2, col2, {})[1]
-        local level = capture_group_to_level[kind]
-        while current.level >= level do
-            current = current.parent
-            assert(current ~= nil)
-        end
-        local start_row, start_col, end_row, end_col = node:parent():parent():range()
-        local section_range = {
-            ["start"] = { line = start_row, character = start_col },
-            ["end"] = { line = end_row - 1, character = end_col },
-        }
-        ---@type Symbol
-        local new = {
-            kind = kind,
-            name = name,
-            detail = "",
-            level = level,
-            parent = current,
-            children = {},
-            range = section_range,
-            selectionRange = section_range,
-        }
-        table.insert(current.children, new)
-        current = new
-    end
-
-    return true, root
-end
-
----@param cache table
----@param buf integer
----@return boolean, Symbol?
-local function json_get_symbols(cache, buf)
-    local ts_type_kind = {
-        ["object"] = "Object",
-        ["array"] = "Array",
-        ["true"] = "Boolean",
-        ["false"] = "Boolean",
-        ["string"] = "String",
-        ["number"] = "Number",
-        ["null"] = "Null",
-    }
-
-    ---@param ts_node any
-    ---@return Range
-    local function symbol_range_for_ts_node(ts_node)
-        local sline, scol, eline, ecol = ts_node:range()
-        return {
-            start = { line = sline, character = scol },
-            ["end"] = { line = eline, character = ecol },
-        }
-    end
-
-    ---@return string
-    local function get_detail(kind, ts_node)
-        if kind == "Object" then
-            return ""
-        elseif kind == "Array" then
-            return ""
-        elseif kind == "Boolean" then
-            return ts_node:type()
-        elseif kind == "String" then
-            return string.sub(get_ts_node_text(ts_node, buf), 2, -2)
-        elseif kind == "Number" then
-            return get_ts_node_text(ts_node, buf)
-        elseif kind == "Null" then
-            return "null"
-        end
-        assert(false, "unexpected kind: " .. tostring(kind))
-        return ""
-    end
-
-    local walk_array
-
-    ---@param node Symbol
-    ---@param ts_node any
-    local function walk_object(node, ts_node)
-        for ts_child in ts_node:iter_children() do
-            if ts_child:named() then
-                local key_node = ts_child:child(0)
-                local value_node = ts_child:child(2)
-                local kind = ts_type_kind[value_node:type()]
-                ---@type Symbol
-                local new_symbol = {
-                    kind = kind,
-                    name = string.sub(get_ts_node_text(key_node, buf), 2, -2),
-                    detail = get_detail(kind, value_node),
-                    level = node.level + 1,
-                    parent = node,
-                    children = {},
-                    range = symbol_range_for_ts_node(ts_child),
-                    selectionRange = symbol_range_for_ts_node(ts_child),
-                }
-                table.insert(node.children, new_symbol)
-                if kind == "Array" then
-                    walk_array(new_symbol, value_node)
-                elseif kind == "Object" then
-                    walk_object(new_symbol, value_node)
-                end
-            end
-        end
-    end
-
-    ---@param node Symbol
-    ---@param ts_node any
-    walk_array = function(node, ts_node)
-        local array_index = 0
-        for ts_child in ts_node:iter_children() do
-            if ts_child:named() then
-                local kind = ts_type_kind[ts_child:type()]
-                ---@type Symbol
-                local new_symbol = {
-                    kind = kind,
-                    name = tostring(array_index),
-                    detail = get_detail(kind, ts_child),
-                    level = node.level + 1,
-                    parent = node,
-                    children = {},
-                    range = symbol_range_for_ts_node(ts_child),
-                    selectionRange = symbol_range_for_ts_node(ts_child),
-                }
-                table.insert(node.children, new_symbol)
-                if kind == "Array" then
-                    walk_array(new_symbol, ts_child)
-                elseif kind == "Object" then
-                    walk_object(new_symbol, ts_child)
-                end
-                array_index = array_index + 1
-            end
-        end
-    end
-
-    local root = Symbol_root()
-    local ts_root = cache.parser:parse()[1]:root()
-
-    local single_top_level_obj = ts_root:child_count() == 1 and ts_root:named_child_count() > 0
-    if single_top_level_obj then root.level = root.level - 1 end
-
-    walk_array(root, ts_root)
-
-    if single_top_level_obj then
-        root.level = root.level + 1
-        root.children = root.children[1].children
-    end
-
-    return true, root
-end
-
----@param cache table
----@param buf integer
-local function org_get_symbols(cache, buf)
-    local rootNode = cache.parser:parse()[1]:root()
-    local query = vim.treesitter.query.parse("org", "(section) @s")
-    local root = Symbol_root()
-    local current = root
-    for _, node, _, _ in query:iter_captures(rootNode, 0) do
-        local headline_node = node:child(0)
-        local stars_node = headline_node:child(0)
-        local stars = get_ts_node_text(stars_node, buf)
-        local level = #stars
-        local kind = "H" .. tostring(level)
-        local item_node = headline_node:child(1)
-        local name = get_ts_node_text(item_node, buf)
-        while current.level >= level do
-            current = current.parent
-            assert(current ~= nil)
-        end
-        local start_row, start_col, end_row, end_col = node:range()
-        local section_range = {
-            ["start"] = { line = start_row, character = start_col },
-            ["end"] = { line = end_row - 1, character = end_col },
-        }
-        ---@type Symbol
-        local new = {
-            kind = kind,
-            name = name,
-            detail = "",
-            level = level,
-            parent = current,
-            children = {},
-            range = section_range,
-            selectionRange = section_range,
-        }
-        table.insert(current.children, new)
-        current = new
-    end
-
-    return true, root
-end
-
----@type Provider
-local TreesitterProvider = {
-    name = "treesitter",
-    supports = function(cache, buf)
-        local ft_to_parser_name = {
-            help = "vimdoc",
-            markdown = "markdown",
-            json = "json",
-            jsonl = "json",
-            org = "org",
-        }
-        local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
-        local parser_name = ft_to_parser_name[ft]
-        if parser_name == nil then return false end
-        local ok, parser = pcall(vim.treesitter.get_parser, buf, parser_name)
-        if not ok then return false end
-        cache.parser = parser
-        cache.ft = ft
-        return true
-    end,
-    async_get_symbols = nil,
-    get_symbols = function(cache, buf)
-        ---@type table<string, ProviderGetSymbols>
-        local get_symbols_funs = {
-            help = vimdoc_get_symbols,
-            markdown = markdown_get_symbols,
-            json = json_get_symbols,
-            jsonl = json_get_symbols,
-            org = org_get_symbols,
-        }
-        local get_symbols = get_symbols_funs[cache.ft]
-        assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(cache.ft))
-        return get_symbols(cache, buf)
-    end,
-}
 
 ---@class Preview
 ---@field sidebar Sidebar
 ---@field win integer
 ---@field locked boolean
 ---@field auto_show boolean
----@field source_win integer
----@field source_buf integer
 ---@field keymaps_to_remove string[]
+local Preview = {}
+Preview.__index = Preview
 
 ---@return Preview
-local function preview_new_obj()
-    return {
+function Preview:new()
+    return setmetatable({
         sidebar = nil,
         win = -1,
         locked = false,
         auto_show = cfg.default.sidebar.preview.show_always,
-        source_buf = -1,
         keymaps_to_remove = {},
-    }
+    }, self)
 end
 
----@class PreviewOpenParams
----@field source_win integer
----@field source_buf integer
----@field symbol Symbol
----@field cursor integer[2]
----@field config PreviewConfig
----@field sidebar_win integer
----@field sidebar_side "left" | "right"
-
----@param preview Preview
-local function preview_close(preview)
-    if vim.api.nvim_win_is_valid(preview.win) then
-        vim.api.nvim_win_close(preview.win, true)
-    end
-    preview.locked = false
-    preview.win = -1
-    for _, key in ipairs(preview.keymaps_to_remove) do
-        vim.keymap.del("n", key, { buffer = preview.source_buf })
-    end
-    preview.keymaps_to_remove = {}
-    preview.source_buf = -1
-end
-
+local sidebar_source_win_buf
 local sidebar_close
+local sidebar_current_symbol
+local sidebar_current_symbols
 
----@param preview Preview
-local function preview_goto_symbol(preview)
-    local cursor = vim.api.nvim_win_get_cursor(preview.win)
-    vim.api.nvim_win_set_cursor(preview.source_win, cursor)
-    vim.api.nvim_set_current_win(preview.source_win)
-    vim.fn.win_execute(preview.source_win, "normal! zz")
-    if preview.sidebar.close_on_goto then
-        sidebar_close(preview.sidebar)
+function Preview:close()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_win_close(self.win, true)
+    end
+    self.locked = false
+    self.win = -1
+    local source_buf = sidebar_source_win_buf(self.sidebar)
+    for _, key in ipairs(self.keymaps_to_remove) do
+        vim.keymap.del("n", key, { buffer = source_buf })
+    end
+    self.keymaps_to_remove = {}
+end
+
+function Preview:goto_symbol()
+    local cursor = vim.api.nvim_win_get_cursor(self.win)
+    vim.api.nvim_win_set_cursor(self.sidebar.source_win, cursor)
+    vim.api.nvim_set_current_win(self.sidebar.source_win)
+    vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
+    if self.sidebar.close_on_goto then
+        sidebar_close(self.sidebar)
     end
 end
 
 ---@type table<PreviewAction, fun(preview: Preview)>
 local preview_actions = {
-    ["close"] = preview_close,
-    ["goto-code"] = preview_goto_symbol,
+    ["close"] = Preview.close,
+    ["goto-code"] = Preview.goto_symbol,
 }
-assert_keys_are_enum(preview_actions, cfg.PreviewAction, "preview_actions")
+utils.assert_keys_are_enum(preview_actions, cfg.PreviewAction, "preview_actions")
 
----@param preview Preview
----@param params PreviewOpenParams
-local function _preview_open(preview, params)
-    local config = params.config
-    local range = params.symbol.range
-    local selection_range = params.symbol.selectionRange
+function Preview:open()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+        return
+    end
 
-    params.cursor[1] = params.cursor[1] - vim.fn.line("w0", params.sidebar_win) + 1
+    local config = self.sidebar.preview_config
+    local source_buf = sidebar_source_win_buf(self.sidebar)
+    local symbol = sidebar_current_symbol(self.sidebar)
+    local range = symbol.range
+    local selection_range = symbol.selectionRange
+    local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
+    cursor[1] = cursor[1] - vim.fn.line("w0", self.sidebar.win) + 1
 
     local height = config.fixed_size_height
     if config.auto_size then
@@ -819,10 +147,10 @@ local function _preview_open(preview, params)
         height = math.max(config.min_window_height, height)
         height = math.min(config.max_window_height, height)
     end
-    local max_height = vim.api.nvim_win_get_height(params.source_win) - 3
+    local max_height = vim.api.nvim_win_get_height(self.sidebar.source_win) - 3
     height = math.min(max_height, height)
 
-    local max_width = vim.api.nvim_win_get_width(params.source_win) - 2
+    local max_width = vim.api.nvim_win_get_width(self.sidebar.source_win) - 2
     local width = config.window_width
     width = math.min(max_width, width)
 
@@ -833,139 +161,105 @@ local function _preview_open(preview, params)
         style = "minimal",
         zindex = 45, -- to allow other floating windows (like symbol peek) in front
     }
-    if params.sidebar_side == "right" then
+    if self.sidebar.win_dir == "right" then
         opts.relative = "win"
-        opts.win = params.sidebar_win
+        opts.win = self.sidebar.win
         opts.anchor = "NE"
-        opts.row = params.cursor[1] - 1
+        opts.row = cursor[1] - 1
         opts.col = -1
     else
         opts.relative = "win"
-        opts.win = params.source_win
+        opts.win = self.sidebar.source_win
         opts.anchor = "NW"
-        opts.row = params.cursor[1] - 1
+        opts.row = cursor[1] - 1
         opts.col = 0
     end
 
-    preview.win = vim.api.nvim_open_win(params.source_buf, false, opts)
-    if params.config.show_line_number then
-        vim.wo[preview.win].number = true
+    self.win = vim.api.nvim_open_win(source_buf, false, opts)
+    if config.show_line_number then
+        vim.wo[self.win].number = true
     end
     vim.api.nvim_win_set_cursor(
-        preview.win,
+        self.win,
         { selection_range.start.line+1, selection_range.start.character }
     )
-    vim.fn.win_execute(preview.win, "normal! zt")
-    vim.api.nvim_set_option_value("cursorline", true, { win = preview.win })
+    vim.fn.win_execute(self.win, "normal! zt")
+    vim.api.nvim_set_option_value("cursorline", true, { win = self.win })
 
-    preview.source_win = params.source_win
-    preview.source_buf = params.source_buf
     for keymap, action in pairs(config.keymaps) do
-        local fn = function() preview_actions[action](preview) end
-        vim.keymap.set("n", keymap, fn, { buffer = params.source_buf })
-        table.insert(preview.keymaps_to_remove, keymap)
+        local fn = function() preview_actions[action](self) end
+        vim.keymap.set("n", keymap, fn, { buffer = source_buf })
+        table.insert(self.keymaps_to_remove, keymap)
     end
 end
 
----@param get_params fun(): PreviewOpenParams
----@param preview Preview
-local function preview_open(preview, get_params)
-    if vim.api.nvim_win_is_valid(preview.win) then
-        vim.api.nvim_set_current_win(preview.win)
-    else
-        local params = get_params()
-        _preview_open(preview, params)
-    end
+function Preview:toggle_auto_show()
+    if self.auto_show then self:close() else self:open() end
+    self.auto_show = not self.auto_show
 end
 
----@param preview Preview
----@param get_open_params fun(): PreviewOpenParams
-local function preview_toggle_auto_show(preview, get_open_params)
-    if preview.auto_show then
-        preview_close(preview)
-    else
-        preview_open(preview, get_open_params)
-    end
-    preview.auto_show = not preview.auto_show
-end
-
----@param preview Preview
----@param get_open_params fun(): PreviewOpenParams
-local function preview_on_cursor_move(preview, get_open_params)
+function Preview:on_cursor_move()
     -- After creating the preview the CursorMoved event is triggered once.
     -- We ignore it here.
-    if preview.locked then
-        preview.locked = false
+    if self.locked then
+        self.locked = false
     else
-        preview_close(preview)
-        if preview.auto_show then
-            preview_open(preview, get_open_params)
-        end
+        self:close()
+        if self.auto_show then self:open() end
     end
 end
 
----@param preview Preview
-local function preview_on_win_enter(preview)
+function Preview:on_win_enter()
     if (
-        vim.api.nvim_win_is_valid(preview.win) and
-        vim.api.nvim_get_current_win() ~= preview.win
+        vim.api.nvim_win_is_valid(self.win) and
+        vim.api.nvim_get_current_win() ~= self.win
     ) then
-        preview_close(preview)
+        self:close()
     end
 end
 
----@param preview Preview
 ---@param win integer
-local function preview_on_win_close(preview, win)
-    if win == preview.win then
-        preview_close(preview)
+function Preview:on_win_close(win)
+    if win == self.win then
+        self:close()
     end
 end
 
----@class DetailsWindow
+---@class DetailsWin
+---@field sidebar Sidebar
 ---@field auto_show boolean
 ---@field win integer
----@field sidebar_win integer
 ---@field locked boolean
 ---@field prev_cursor [integer, integer] | nil
 ---@field show_debug_info boolean
+local DetailsWin = {}
+DetailsWin.__index = DetailsWin
 
----@return DetailsWindow
-local function details_new_obj()
-    return {
+---@return DetailsWin
+function DetailsWin:new()
+    return setmetatable({
+        sidebar = nil,
         auto_show = false,
         win = -1,
-        sidebar_win = -1,
         locked = false,
         prev_cursor = nil,
         show_debug_info = false
-    }
+    }, self)
 end
 
----@class DetailsOpenParams
----@field sidebar_win integer
----@field sidebar_side "left" | "right"
----@field symbol Symbol
----@field symbol_state SymbolState
----@field kinds table<string, string> | ProviderKindFun
----@field highlights table<string, string>
+function DetailsWin:open()
+    if vim.api.nvim_win_is_valid(self.win) then return end
 
----@param details DetailsWindow
----@param params DetailsOpenParams
-local function details_open(details, params)
-    local sidebar_win = params.sidebar_win
-    local symbol = params.symbol
-
-    if vim.api.nvim_win_is_valid(details.win) then
-        return
-    end
+    local sidebar_win = self.sidebar.win
+    local symbols = sidebar_current_symbols(self.sidebar)
+    local symbol, symbol_state = sidebar_current_symbol(self.sidebar)
 
     local details_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = details_buf })
 
     local text = {}
 
-    if details.show_debug_info then
+    if self.show_debug_info then
         ---@param range Range
         ---@return string
         local function range_string(range)
@@ -983,22 +277,27 @@ local function details_open(details, params)
         table.insert(text, "   level: " .. tostring(symbol.level))
         table.insert(text, "   range: " .. range_string(symbol.range))
         table.insert(text, "   selectionRange: " .. range_string(symbol.selectionRange))
-        table.insert(text, "   folded: " .. tostring(params.symbol_state.folded))
-        table.insert(text, "   visible: " .. tostring(params.symbol_state.visible))
+        table.insert(text, "   folded: " .. tostring(symbol_state.folded))
+        table.insert(text, "   visible: " .. tostring(symbol_state.visible))
         table.insert(text, "")
     end
+
+    local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(self.sidebar) })
+    local kinds_cfg = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local highlights_cfg = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
 
     ---@type Highlight[]
     local highlights = {}
 
-    local display_kind = cfg.kind_for_symbol(params.kinds, symbol)
+    local display_kind = cfg.kind_for_symbol(kinds_cfg, symbol)
     if display_kind ~= "" then
-        table.insert(highlights, {
-            group = params.highlights[symbol.kind],
+        local highlight = nvim.Highlight:new({
+            group = highlights_cfg[symbol.kind],
             line = #text + 1,
             col_start = 1,
             col_end = 1 + #display_kind,
         })
+        table.insert(highlights, highlight)
         display_kind = display_kind .. " "
     end
     table.insert(text, " " .. display_kind .. table.concat(Symbol_path(symbol), "."))
@@ -1007,12 +306,12 @@ local function details_open(details, params)
         local detail_first_line = #text + 1
         for detail_line, line in ipairs(vim.split(symbol.detail, "\n")) do
             table.insert(text, "   " .. line)
-            table.insert(highlights, {
+            table.insert(highlights, nvim.Highlight:new({
                 group = "Comment",
                 line = detail_first_line + detail_line - 1,
                 col_start = 0,
                 col_end = 3 + #line,
-            })
+            }))
         end
     end
 
@@ -1021,10 +320,10 @@ local function details_open(details, params)
         longest_line = math.max(longest_line, #line)
     end
 
-    buf_set_content(details_buf, text)
+    nvim.buf_set_content(details_buf, text)
 
-    for _, hl in ipairs(highlights) do
-        Highlight_apply(details_buf, hl)
+    for _, highlight in ipairs(highlights) do
+        highlight:apply(details_buf)
     end
 
     local line_count = vim.api.nvim_buf_line_count(details_buf)
@@ -1040,13 +339,13 @@ local function details_open(details, params)
     if row < 0 then row = cursor[1] end
 
     local col = 0
-    if params.sidebar_side == "right" and width + 2 > sidebar_width then
+    if self.sidebar.win_dir == "right" and width + 2 > sidebar_width then
         col = col - (width + 2 - sidebar_width)
     end
 
     local opts = {
         relative = "win",
-        win = params.sidebar_win,
+        win = self.sidebar.win,
         anchor = "NW",
         row = row,
         col = col,
@@ -1055,61 +354,49 @@ local function details_open(details, params)
         border = "single",
         style = "minimal",
     }
-    details.win = vim.api.nvim_open_win(details_buf, false, opts)
-    details.sidebar_win = sidebar_win
+    self.win = vim.api.nvim_open_win(details_buf, false, opts)
 end
 
----@param details DetailsWindow
----@param get_open_params fun(): DetailsOpenParams
-local function details_on_cursor_move(details, get_open_params)
-    if details.locked then
-        if details.prev_cursor ~= nil then
-            vim.api.nvim_win_set_cursor(details.sidebar_win, details.prev_cursor)
-            details.prev_cursor = nil
+function DetailsWin:on_cursor_move()
+    if self.locked then
+        if self.prev_cursor ~= nil then
+            vim.api.nvim_win_set_cursor(self.sidebar.win, self.prev_cursor)
+            self.prev_cursor = nil
         end
-        details.locked = false
+        self.locked = false
     else
-        if vim.api.nvim_win_is_valid(details.win) then
-            vim.api.nvim_win_close(details.win, true)
-            details.win = -1
+        if vim.api.nvim_win_is_valid(self.win) then
+            vim.api.nvim_win_close(self.win, true)
+            self.win = -1
         end
-        if details.auto_show then
-            details_open(details, get_open_params())
+        if self.auto_show then
+            self:open()
         end
     end
 end
 
----@param details DetailsWindow
-local function details_close(details)
-    if vim.api.nvim_win_is_valid(details.win) then
-        vim.api.nvim_win_close(details.win, true)
+function DetailsWin:close()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_win_close(self.win, true)
     end
-    details.win = -1
-    details.locked = false
+    self.win = -1
+    self.locked = false
 end
 
----@param details DetailsWindow
----@param get_open_params fun(): DetailsOpenParams
-local function details_toggle_auto_show(details, get_open_params)
-    if details.auto_show then
-        details_close(details)
-    else
-        details_open(details, get_open_params())
-    end
-    details.auto_show = not details.auto_show
+function DetailsWin:toggle_auto_show()
+    if self.auto_show then self:close() else self:open() end
+    self.auto_show = not self.auto_show
 end
 
----@param details DetailsWindow
----@param get_open_params fun(): DetailsOpenParams
-local function details_on_win_enter(details, get_open_params)
-    if vim.api.nvim_win_is_valid(details.win) then
+function DetailsWin:on_win_enter()
+    if vim.api.nvim_win_is_valid(self.win) then
         local curr_win = vim.api.nvim_get_current_win()
-        if curr_win == details.sidebar_win then
-            if details.auto_show then
-                details_open(details, get_open_params())
+        if curr_win == self.sidebar.win then
+            if self.auto_show then
+                self:open()
             end
         else
-            details_close(details)
+            self:close()
         end
     end
 end
@@ -1261,7 +548,7 @@ local function SymbolsCache_new()
 end
 
 ---@class SymbolsRetriever
----@field providers Provider[]
+---@field providers [string, any][] type(Provider)[]
 ---@field providers_config ProvidersConfig
 ---@field cache SymbolsCache
 
@@ -1289,21 +576,21 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, o
         entry.post_update_callbacks = {}
     end
 
-    ---@param provider Provider
-    local function _on_fail(provider)
+    ---@param provider_name string
+    local function _on_fail(provider_name)
         return function()
             cleanup_on_fail()
-            log.warn(provider.name .. " failed")
-            on_fail(provider.name)
+            log.warn(provider_name .. " failed")
+            on_fail(provider_name)
         end
     end
 
-    ---@param provider Provider
-    local function _on_timeout(provider)
+    ---@param provider_name string
+    local function _on_timeout(provider_name)
         return function()
             cleanup_on_fail()
-            log.warn(provider.name .. " timed out")
-            on_timeout(provider.name)
+            log.warn(provider_name .. " timed out")
+            on_timeout(provider_name)
         end
     end
 
@@ -1349,31 +636,29 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, o
     end
 
     log.trace("attempting to retrieve symbols")
-    for _, provider in ipairs(retriever.providers) do
-        local cache = {}
-        if provider.init ~= nil then
-            local config = retriever.providers_config[provider.name]
-            provider.init(cache, config)
-        end
-        if provider.supports(cache, buf) then
-            log.trace("using provider: " .. provider.name)
+    for _, _provider in ipairs(retriever.providers) do
+        local provider_name = _provider[1]
+        local config = retriever.providers_config[provider_name]
+        ---@type Provider
+        local provider = _provider[2]:new(config)
+        if provider:supports(buf) then
+            log.trace("using provider: " .. provider_name)
             table.insert(entry.post_update_callbacks, on_retrieve)
             entry.update_in_progress = true
             if provider.async_get_symbols ~= nil then
-                provider.async_get_symbols(
-                    cache,
+                provider:async_get_symbols(
                     buf,
-                    _on_retrieve(provider.name, false),
-                    _on_fail(provider),
-                    _on_timeout(provider)
+                    _on_retrieve(provider_name, false),
+                    _on_fail(provider_name),
+                    _on_timeout(provider_name)
                 )
             else
-                local ok, symbol = provider.get_symbols(cache, buf)
+                local ok, symbol = provider:get_symbols(buf)
                 if not ok then
-                    _on_fail(provider)()
+                    _on_fail(provider_name)()
                 else
                     assert(symbol ~= nil)
-                    _on_retrieve(provider.name, false)(symbol)
+                    _on_retrieve(provider_name, false)(symbol)
                 end
             end
             return true
@@ -1445,8 +730,6 @@ local function activate_cursorline(cursor)
     end
 end
 
-local sidebar_current_symbols
-
 ---@param sidebar Sidebar
 local function hide_cursor(sidebar)
     local pos = vim.api.nvim_win_get_cursor(sidebar.win)
@@ -1463,12 +746,431 @@ local function reset_cursor(cursor)
     cursor.hidden = false
 end
 
+local sidebar_change_view
+
+---@class (exact) SearchView
+---@field sidebar Sidebar
+---@field buf integer
+---@field prompt_buf integer
+---@field prompt_win integer
+---@field search_results SearchSymbol[]
+---@field flat_symbols Symbol[]
+---@field history string[]
+---@field history_idx integer
+local SearchView = {}
+---@diagnostic disable-next-line
+SearchView.__index = SearchView
+
+---@return SearchView
+function SearchView:new()
+    return setmetatable({
+        sidebar = nil,
+        buf = -1,
+        prompt_buf = -1,
+        prompt_win = -1,
+        search_results = {},
+        flat_symbols = {},
+        history = {},
+        history_idx = -1
+    }, self)
+end
+
+function SearchView:init(sidebar)
+    self.sidebar = sidebar
+    self:init_buf()
+    self:init_prompt_buf()
+end
+
+function SearchView:init_buf()
+    if vim.api.nvim_buf_is_valid(self.buf) then return end
+
+    self.buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(self.buf, "symbols.nvim [" .. tostring(self.sidebar.num) .. "]" .. " (search)")
+    nvim.buf_set_modifiable(self.buf, false)
+
+    vim.api.nvim_create_autocmd(
+        { "WinResized" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                if self.prompt_win == -1 then return end
+                local win = self.sidebar.win
+                local win_h = vim.api.nvim_win_get_height(win)
+                local win_w = vim.api.nvim_win_get_width(win)
+                local opts = {
+                    relative = "win",
+                    win = self.sidebar.win,
+                    height = 1,
+                    width = win_w - 1,
+                    row = win_h - 2,
+                    col = 0,
+                }
+                vim.api.nvim_win_set_config(self.prompt_win, opts)
+            end,
+        }
+    )
+
+    vim.keymap.set(
+        "n", "q",
+        function() sidebar_close(self.sidebar) end,
+        { buffer = self.buf }
+    )
+    vim.keymap.set(
+        "n", "o",
+        function()
+            self:save_history()
+            self:jump_to_current_symbol()
+            vim.api.nvim_set_current_win(self.sidebar.win)
+        end,
+        { buffer = self.buf }
+    )
+end
+
+function SearchView:init_prompt_buf()
+    if vim.api.nvim_buf_is_valid(self.prompt_buf) then return end
+    self.prompt_buf = vim.api.nvim_create_buf(false, true)
+
+    vim.api.nvim_create_autocmd(
+        { "TextChangedI" },
+        {
+            group = global_autocmd_group,
+            buffer = self.prompt_buf,
+            callback = function() self:search() end,
+        }
+    )
+    --- TODO remove this autocommand when no longer needed
+    vim.api.nvim_create_autocmd(
+        { "WinEnter" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                local win = vim.api.nvim_get_current_win()
+                if win == self.prompt_win then
+                    vim.cmd("startinsert!")
+                end
+            end
+        }
+    )
+    vim.api.nvim_create_autocmd(
+        { "WinLeave" },
+        {
+            group = global_autocmd_group,
+            callback = function()
+                local win = vim.api.nvim_get_current_win()
+                if win == self.prompt_win then
+                    vim.cmd("stopinsert")
+                end
+            end
+        }
+    )
+    vim.api.nvim_create_autocmd(
+        { "BufHidden" },
+        {
+            group = global_autocmd_group,
+            buffer = self.prompt_buf,
+            callback = function() self:hide() end
+        }
+    )
+
+    vim.keymap.set(
+        "i", "<Esc>",
+        function()
+            vim.api.nvim_set_current_win(self.sidebar.win)
+        end,
+        { buffer = self.prompt_buf }
+    )
+    vim.keymap.set(
+        "i", "<S-Tab>",
+        function()
+            local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
+            local new_cursor = { cursor[1] - 1, 0 }
+            if new_cursor[1] == 0 then
+                local lines = vim.api.nvim_buf_line_count(self.buf)
+                new_cursor[1] = lines
+            end
+            vim.api.nvim_win_set_cursor(self.sidebar.win, new_cursor)
+        end,
+        { buffer = self.prompt_buf }
+    )
+    vim.keymap.set(
+        "i", "<Tab>",
+        function()
+            local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
+            local new_cursor = { cursor[1] + 1, 0 }
+            local lines = vim.api.nvim_buf_line_count(self.buf)
+            if new_cursor[1] > lines then new_cursor[1] = 1 end
+            vim.api.nvim_win_set_cursor(self.sidebar.win, new_cursor)
+        end,
+        { buffer = self.prompt_buf }
+    )
+    vim.keymap.set(
+        "i", "<Cr>",
+        function()
+            self:save_history()
+            self:jump_to_current_symbol()
+            if self.sidebar.close_on_goto then
+                sidebar_close(self.sidebar)
+            else
+                sidebar_change_view(self.sidebar, "symbols")
+            end
+        end,
+        { buffer = self.prompt_buf }
+    )
+    vim.keymap.set(
+        "i", "<C-j>",
+        function()
+            local text = self:next_item_from_history()
+            self:set_prompt_buf(text)
+            vim.print(self.history_idx)
+        end,
+        { buffer = self.prompt_buf }
+    )
+    vim.keymap.set(
+        "i", "<C-k>",
+        function()
+            local text = self:prev_item_from_history()
+            self:set_prompt_buf(text)
+            vim.print(self.history_idx)
+        end,
+        { buffer = self.prompt_buf }
+    )
+end
+
+---@param value string
+function SearchView:set_prompt_buf(value)
+    value = " " .. value
+    vim.api.nvim_buf_set_lines(self.prompt_buf, 0, -1, false, { value })
+    if vim.api.nvim_win_is_valid(self.prompt_win) then
+        vim.api.nvim_win_set_cursor(self.prompt_win, { 1, #value })
+    end
+end
+
+function SearchView:clear_prompt_buf()
+    self:set_prompt_buf("")
+    self.history_idx = -1
+end
+
+function SearchView:show_prompt_win()
+    self:clear_prompt_buf()
+
+    local win = self.sidebar.win
+    local win_h = vim.api.nvim_win_get_height(win)
+    local win_w = vim.api.nvim_win_get_width(win)
+    local opts = {
+        height = 1,
+        width = win_w - 1,
+        border = { "", "", "", "", "", "", "", ">" },
+        style = "minimal",
+        relative = "win",
+        win = win,
+        anchor = "NW",
+        row = win_h - 2,
+        col = 0,
+    }
+    self.prompt_win = vim.api.nvim_open_win(self.prompt_buf, false, opts)
+end
+
+---@return string
+function SearchView:get_prompt_text()
+    local text = vim.api.nvim_buf_get_lines(self.prompt_buf, 0, 1, false)[1]
+    return vim.trim(text)
+end
+
+function SearchView:save_history()
+    local text = self:get_prompt_text()
+    if self.history[#self.history] ~= text then
+        table.insert(self.history, text)
+    end
+end
+
+---@return string
+function SearchView:prev_item_from_history()
+    assert(self.history_idx < #self.history, "SearchView.history_idx too large")
+    if #self.history == 0 then return "" end
+    if self.history_idx + 1 == #self.history then
+        return self.history[1]
+    end
+    self.history_idx = self.history_idx + 1
+    return self.history[#self.history - self.history_idx]
+end
+
+---@return string
+function SearchView:next_item_from_history()
+    if self.history_idx <= 0 then
+        self.history_idx = -1
+        return ""
+    end
+    self.history_idx = self.history_idx - 1
+    return self.history[#self.history - self.history_idx]
+end
+
+---@class (exact) SearchSymbol
+---@field s string
+---@field i integer
+
+---@return SearchSymbol[], Symbol[]
+local function _prepare_symbols_for_search(symbols, ft)
+    local search_symbols = {}
+    local flat_symbols = {}
+    local kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local function _prepare(symbol)
+        if not symbols.states[symbol].visible then return end
+        if symbol.level > 0 then
+            local kind = cfg.kind_for_symbol(kinds, symbol)
+            local search_str = " " .. kind .. " " .. symbol.name
+            ---@type SearchSymbol
+            local search_symbol = { s = search_str, i = #flat_symbols+1 }
+            table.insert(search_symbols, search_symbol)
+            table.insert(flat_symbols, symbol)
+        end
+        for _, child in ipairs(symbol.children) do
+            _prepare(child)
+        end
+    end
+    _prepare(symbols.root)
+    return search_symbols, flat_symbols
+end
+
+---@param symbols SearchSymbol[]
+---@return string[]
+local function _search_symbols_to_lines(symbols)
+    local buf_lines = {}
+    for _, symbol in ipairs(symbols) do
+        table.insert(buf_lines, symbol.s)
+    end
+    return buf_lines
+end
+
+---@param search_symbols SearchSymbol[]
+---@param flat_symbols Symbol[]
+---@return Highlight[]
+function SearchView:_search_symbols_highlights(search_symbols, flat_symbols)
+    local highlights = {} ---@type Highlight[]
+    local symbols = sidebar_current_symbols(self.sidebar)
+    local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
+    local highlights_config = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
+    local kinds_display_config = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
+    local kinds_default_config = symbols.provider_config.kinds.default
+    for line_nr, search_symbol in ipairs(search_symbols) do
+        local symbol = flat_symbols[search_symbol.i]
+        local kind_display = cfg.kind_for_symbol(kinds_display_config, symbol, kinds_default_config)
+        local highlight = nvim.Highlight:new({
+            group = highlights_config[symbol.kind],
+            line = line_nr,
+            col_start = 1,
+            col_end = #kind_display + 1,
+        })
+        table.insert(highlights, highlight)
+    end
+    return highlights
+end
+
+function SearchView:search()
+    local text = self:get_prompt_text()
+    local symbols = sidebar_current_symbols(self.sidebar)
+    local source_buf = sidebar_source_win_buf(self.sidebar)
+    local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
+    local search_symbols
+    search_symbols, self.flat_symbols = _prepare_symbols_for_search(symbols, ft)
+    local buf_lines = {}
+    local highlights = {}
+    if #text == 0 then
+        buf_lines = _search_symbols_to_lines(search_symbols)
+        highlights = self:_search_symbols_highlights(search_symbols, self.flat_symbols)
+    else
+        self.search_results = vim.fn.matchfuzzy(search_symbols, text, { key = "s" })
+        buf_lines = _search_symbols_to_lines(self.search_results)
+        highlights = self:_search_symbols_highlights(self.search_results, self.flat_symbols)
+    end
+    if #buf_lines == 0 then table.insert(buf_lines, "") end
+    nvim.buf_set_content(self.buf, buf_lines)
+    for _, highlight in ipairs(highlights) do highlight:apply(self.buf) end
+    vim.api.nvim_win_set_cursor(self.sidebar.win, { 1, 0 })
+end
+
+function SearchView:hide()
+    if vim.api.nvim_win_is_valid(self.prompt_win) then
+        vim.cmd("stopinsert")
+        vim.api.nvim_win_close(self.prompt_win, true)
+        self.prompt_win = -1
+    end
+end
+
+function SearchView:jump_to_current_symbol()
+    local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
+    local search_symbol = self.search_results[cursor[1]]
+    local symbol = self.flat_symbols[search_symbol.i]
+    vim.api.nvim_win_set_cursor(
+        self.sidebar.source_win,
+        { symbol.range.start.line + 1, symbol.range.start.character }
+    )
+    vim.api.nvim_set_current_win(self.sidebar.source_win)
+    vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
+    flash_highlight_under_cursor(self.sidebar.source_win, 400, 1)
+end
+
+function SearchView:show_prompt()
+    self:show_prompt_win()
+
+    vim.keymap.set(
+        "n", "s",
+        function()
+            vim.api.nvim_set_current_win(self.prompt_win)
+        end,
+        { buffer = self.buf }
+    )
+    vim.keymap.set(
+        "n", "<Esc>",
+        function()
+            sidebar_change_view(self.sidebar, "symbols")
+        end,
+        { buffer = self.buf }
+    )
+    vim.keymap.set(
+        "n", "<Cr>",
+        function()
+            self:save_history()
+            self:jump_to_current_symbol()
+            if self.sidebar.close_on_goto then
+                sidebar_close(self.sidebar)
+            else
+                sidebar_change_view(self.sidebar, "symbols")
+            end
+        end,
+        { buffer = self.buf }
+    )
+
+    vim.api.nvim_set_current_win(self.prompt_win)
+    vim.cmd("startinsert!")
+end
+
+function SearchView:show()
+    vim.api.nvim_win_set_buf(self.sidebar.win, self.buf)
+    self:show_prompt()
+end
+
+function SearchView:destroy()
+    if vim.api.nvim_buf_is_valid(self.buf) then
+        vim.api.nvim_buf_delete(self.buf, { force = true })
+        self.buf = -1
+    end
+    if vim.api.nvim_buf_is_valid(self.prompt_buf) then
+        vim.api.nvim_buf_delete(self.prompt_buf, { force = true })
+        self.prompt_buf = -1
+    end
+end
+
+---@alias SidebarView "symbols" | "search"
+
 ---@class Sidebar
+---@field num integer Ordering number, used for naming buffers.
 ---@field gs GlobalState
 ---@field deleted boolean
 ---@field win integer
 ---@field win_dir "left" | "right"
 ---@field win_settings WinSettings
+---@field current_view SidebarView
+---@field search_view SearchView
 ---@field buf integer
 ---@field source_win integer
 ---@field visible boolean
@@ -1478,7 +1180,7 @@ end
 ---@field symbol_display_config table<string, SymbolDisplayConfig>
 ---@field preview_config PreviewConfig
 ---@field preview Preview
----@field details DetailsWindow
+---@field details DetailsWin
 ---@field char_config CharConfig
 ---@field show_inline_details boolean
 ---@field show_guide_lines boolean
@@ -1501,6 +1203,8 @@ local function sidebar_new_obj()
         win = -1,
         win_dir = "right",
         win_settings = WinSettings_new(),
+        current_view = "symbols",
+        search_view = SearchView:new(),
         buf = -1,
         source_win = -1,
         visible = false,
@@ -1508,8 +1212,8 @@ local function sidebar_new_obj()
         buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
         symbol_display_config = {},
-        preview = preview_new_obj(),
-        details = details_new_obj(),
+        preview = Preview:new(),
+        details = DetailsWin:new(),
         char_config = config.chars,
         show_inline_details = false,
         show_guide_lines = false,
@@ -1533,11 +1237,35 @@ end
 
 ---@param sidebar Sidebar
 ---@return integer
-local function sidebar_source_win_buf(sidebar)
+sidebar_source_win_buf = function(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.source_win) then
         return vim.api.nvim_win_get_buf(sidebar.source_win)
     end
     return -1
+end
+
+local sidebar_refresh_view
+
+---@param sidebar Sidebar
+---@param new_view SidebarView
+sidebar_change_view = function(sidebar, new_view)
+    if sidebar.current_view == "symbols" then
+    elseif sidebar.current_view == "search" then
+        sidebar.search_view:hide()
+    else
+        assert(false, "Unknown view: " .. tostring(sidebar.current_view))
+    end
+
+    if new_view == "symbols" then
+        vim.api.nvim_win_set_buf(sidebar.win, sidebar.buf)
+        sidebar_refresh_view(sidebar)
+    elseif new_view == "search" then
+        sidebar.search_view:show()
+    else
+        assert(false, "Unknown view: " .. tostring(new_view))
+    end
+
+    sidebar.current_view = new_view
 end
 
 ---@param root Symbol
@@ -1603,7 +1331,7 @@ end
 
 ---@param sidebar Sidebar
 ---@return Symbols
- sidebar_current_symbols = function(sidebar)
+sidebar_current_symbols = function(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
     assert(source_buf ~= -1)
     local symbols = sidebar.buf_symbols[source_buf]
@@ -1760,16 +1488,16 @@ local function sidebar_open(sidebar)
     end
 end
 
----@param sidebar Sidebar
-local function sidebar_preview_close(sidebar)
-    preview_close(sidebar.preview)
+local function symbols_view_close(sidebar)
+    sidebar.preview:close()
+    sidebar.details:close()
 end
 
 --- Restore window state to default. Useful when opening a file in the sidebar window.
 ---@param sidebar Sidebar
 local function sidebar_win_restore(sidebar)
-    sidebar_preview_close(sidebar)
-    details_close(sidebar.details)
+    symbols_view_close(sidebar)
+    sidebar.search_view:hide()
     WinSettings_apply(sidebar.win, sidebar.win_settings)
     reset_cursor(sidebar.gs.cursor)
     sidebar.win = -1
@@ -1778,8 +1506,8 @@ end
 
 sidebar_close = function(sidebar)
     if not sidebar_visible(sidebar) then return end
-    sidebar_preview_close(sidebar)
-    details_close(sidebar.details)
+    symbols_view_close(sidebar)
+    sidebar.search_view:hide()
     if vim.api.nvim_win_is_valid(sidebar.win) then
         vim.api.nvim_win_close(sidebar.win, true)
     end
@@ -1793,13 +1521,14 @@ local function sidebar_destroy(sidebar)
         vim.api.nvim_buf_delete(sidebar.buf, { force = true })
         sidebar.buf = -1
     end
+    sidebar.search_view:destroy()
     sidebar.source_win = -1
     sidebar.deleted = true
 end
 
 ---@param sidebar Sidebar
 ---@return Symbol, SymbolState
-local function sidebar_current_symbol(sidebar)
+sidebar_current_symbol = function(sidebar)
     assert(vim.api.nvim_win_is_valid(sidebar.win))
 
     local symbols = sidebar_current_symbols(sidebar)
@@ -1906,14 +1635,13 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 local kind_display = cfg.kind_for_symbol(kinds_display_config, sym, kinds_default_config)
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
-                ---@type Highlight
-                local hl = {
+                local highlight = nvim.Highlight:new({
                     group = highlights_config[sym.kind],
                     line = line_nr,
                     col_start = #indent + #prefix,
                     col_end = #indent + #prefix + #kind_display
-                }
-                table.insert(highlights, hl)
+                })
+                table.insert(highlights, highlight)
                 local new_indent
                 if show_guide_lines and sym.level > 1 and sym_i ~= #symbol.children then
                     new_indent = indent .. chars.guide_vert .. " "
@@ -1980,7 +1708,7 @@ local function sidebar_add_inline_details(buf, details)
 end
 
 ---@param sidebar Sidebar
-local function sidebar_refresh_view(sidebar)
+sidebar_refresh_view = function(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
 
     local buf_lines, highlights = sidebar_get_buf_lines_and_highlights(
@@ -1989,10 +1717,10 @@ local function sidebar_refresh_view(sidebar)
 
     sidebar.lines = get_line_for_each_symbol(symbols)
 
-    buf_set_content(sidebar.buf, buf_lines)
+    nvim.buf_set_content(sidebar.buf, buf_lines)
 
-    for _, hl in ipairs(highlights) do
-        Highlight_apply(sidebar.buf, hl)
+    for _, highlight in ipairs(highlights) do
+        highlight:apply(sidebar.buf)
     end
 
     if sidebar.show_inline_details then
@@ -2062,7 +1790,7 @@ local function sidebar_refresh_symbols(sidebar)
     ---@param provider_name string
     local function on_fail(provider_name)
         local lines = { "", " [symbols.nvim]", "", " " .. provider_name .. " provider failed" }
-        buf_set_content(sidebar.buf, lines)
+        nvim.buf_set_content(sidebar.buf, lines)
         sidebar_refresh_size(sidebar, lines)
     end
 
@@ -2072,7 +1800,7 @@ local function sidebar_refresh_symbols(sidebar)
             "", " [symbols.nvim]", "", " " .. provider_name .. " provider timed out",
             "", " Try again or increase", " timeout in config."
         }
-        buf_set_content(sidebar.buf, lines)
+        nvim.buf_set_content(sidebar.buf, lines)
         sidebar_refresh_size(sidebar, lines)
     end
 
@@ -2088,7 +1816,7 @@ local function sidebar_refresh_symbols(sidebar)
         else
             lines = { "", " [symbols.nvim]", "", " no provider supporting", " " .. ft .. " found" }
         end
-        buf_set_content(sidebar.buf, lines)
+        nvim.buf_set_content(sidebar.buf, lines)
         sidebar_refresh_size(sidebar, lines)
     end
 end
@@ -2241,56 +1969,19 @@ local function sidebar_goto_symbol(sidebar)
 end
 
 ---@param sidebar Sidebar
-local function _sidebar_preview_open_params(sidebar)
-    ---@return PreviewOpenParams
-    return function()
-        ---@type PreviewOpenParams
-        local obj = {
-            source_win = sidebar.source_win,
-            source_buf = sidebar_source_win_buf(sidebar),
-            cursor = vim.api.nvim_win_get_cursor(sidebar.win),
-            symbol = sidebar_current_symbol(sidebar),
-            config = sidebar.preview_config,
-            sidebar_win = sidebar.win,
-            sidebar_side = sidebar.win_dir,
-        }
-        return obj
-    end
-end
-
----@param sidebar Sidebar
 local function sidebar_preview_open(sidebar)
-    preview_open(sidebar.preview, _sidebar_preview_open_params(sidebar))
-end
-
----@param sidebar Sidebar
----@return fun(): DetailsOpenParams
-local function _sidebar_details_open_params(sidebar)
-    return function()
-        local symbols = sidebar_current_symbols(sidebar)
-        local symbol, symbol_state = sidebar_current_symbol(sidebar)
-        local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(sidebar) })
-        ---@type DetailsOpenParams
-        return {
-            sidebar_win = sidebar.win,
-            sidebar_side = sidebar.win_dir,
-            symbol = symbol,
-            symbol_state = symbol_state,
-            kinds = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft),
-            highlights = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft),
-        }
-    end
+    sidebar.preview:open()
 end
 
 ---@param sidebar Sidebar
 local function sidebar_peek(sidebar)
     local reopen_details = sidebar.details.win ~= -1
-    if reopen_details then details_close(sidebar.details) end
+    if reopen_details then sidebar.details:close() end
     local reopen_preview = sidebar.preview.win ~= -1
-    if reopen_preview then preview_close(sidebar.preview) end
+    if reopen_preview then sidebar.preview:close() end
     _sidebar_goto_symbol(sidebar)
     vim.api.nvim_set_current_win(sidebar.win)
-    if reopen_details then details_open(sidebar.details, _sidebar_details_open_params(sidebar)()) end
+    if reopen_details then sidebar.details:open() end
     if reopen_preview then sidebar_preview_open(sidebar) end
 end
 
@@ -2305,9 +1996,9 @@ end
 ---@param sidebar Sidebar
 local function sidebar_toggle_show_details(sidebar)
     if vim.api.nvim_win_is_valid(sidebar.details.win) then
-        details_close(sidebar.details)
+        sidebar.details:close()
     else
-        details_open(sidebar.details, _sidebar_details_open_params(sidebar)())
+        sidebar.details:open()
     end
 end
 
@@ -2378,7 +2069,7 @@ end
 local function sidebar_unfold_recursively(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
     local symbol, _ = sidebar_current_symbol(sidebar)
-    symbol_change_folded_rec(symbols, symbol, false, MAX_INT)
+    symbol_change_folded_rec(symbols, symbol, false, utils.MAX_INT)
     sidebar_refresh_view(sidebar)
 end
 
@@ -2386,13 +2077,13 @@ end
 local function sidebar_fold_recursively(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
     local symbol = sidebar_current_symbol(sidebar)
-    local changes = symbol_change_folded_rec(symbols, symbol, true, MAX_INT)
+    local changes = symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     if changes == 0 then
         while(symbol.level > 1) do
             symbol = symbol.parent
             assert(symbol ~= nil)
         end
-        symbol_change_folded_rec(symbols, symbol, true, MAX_INT)
+        symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     end
     sidebar_refresh_view(sidebar)
     move_cursor_to_symbol(sidebar, symbol)
@@ -2410,7 +2101,7 @@ local function sidebar_unfold_one_level(sidebar)
             return symbol.level
         end
 
-        local min_level = MAX_INT
+        local min_level = utils.MAX_INT
         for _, sym in ipairs(symbol.children) do
             min_level = math.min(min_level, find_level_to_unfold(sym))
         end
@@ -2467,16 +2158,21 @@ end
 ---@param sidebar Sidebar
 local function sidebar_unfold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, symbols.root, false, MAX_INT)
+    symbol_change_folded_rec(symbols, symbols.root, false, utils.MAX_INT)
     sidebar_refresh_view(sidebar)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_fold_all(sidebar)
     local symbols = sidebar_current_symbols(sidebar)
-    symbol_change_folded_rec(symbols, symbols.root, true, MAX_INT)
+    symbol_change_folded_rec(symbols, symbols.root, true, utils.MAX_INT)
     symbols.states[symbols.root].folded = false
     sidebar_refresh_view(sidebar)
+end
+
+---@param sidebar Sidebar
+local function sidebar_search(sidebar)
+    sidebar_change_view(sidebar, "search")
 end
 
 ---@param sidebar Sidebar
@@ -2495,13 +2191,13 @@ local function sidebar_toggle_details(sidebar)
 end
 
 local function sidebar_toggle_auto_details(sidebar)
-    details_toggle_auto_show(sidebar.details, _sidebar_details_open_params(sidebar))
+    sidebar.details:toggle_auto_show()
     sidebar_show_toggle_notification(sidebar.win, "auto details win", sidebar.details.auto_show)
 end
 
 ---@param sidebar Sidebar
 local function sidebar_toggle_auto_preview(sidebar)
-    preview_toggle_auto_show(sidebar.preview, _sidebar_preview_open_params(sidebar))
+    sidebar.preview:toggle_auto_show()
     sidebar_show_toggle_notification(sidebar.win, "auto preview win", sidebar.preview.auto_show)
 end
 
@@ -2583,6 +2279,7 @@ local help_options_order = {
     "fold-one-level",
     "unfold-all",
     "fold-all",
+    "search",
     "toggle-inline-details",
     "toggle-auto-details-window",
     "toggle-auto-preview",
@@ -2597,7 +2294,7 @@ local help_options_order = {
     "help",
     "close",
 }
-assert_array_is_enum(help_options_order, cfg.SidebarAction, "help_options_order")
+utils.assert_list_is_enum(help_options_order, cfg.SidebarAction, "help_options_order")
 
 ---@type table<integer, SidebarAction>
 local action_order = {}
@@ -2639,8 +2336,8 @@ local function sidebar_help(sidebar)
         max_width = math.max(max_width, #lines[line_no])
     end
 
-    buf_set_content(help_buf, lines)
-    buf_modifiable(help_buf, false)
+    nvim.buf_set_content(help_buf, lines)
+    nvim.buf_set_modifiable(help_buf, false)
 
     local width = max_width + 1
     local height = #lines + 1
@@ -2660,7 +2357,7 @@ local function sidebar_help(sidebar)
         style = "minimal",
     }
     local help_win = vim.api.nvim_open_win(help_buf, false, opts)
-    win_set_option(help_win, "cursorline", true)
+    nvim.win_set_option(help_win, "cursorline", true)
     vim.api.nvim_set_current_win(help_win)
     vim.api.nvim_win_set_cursor(help_win, { 2, 0 })
 
@@ -2702,6 +2399,8 @@ local sidebar_actions = {
     ["fold-one-level"] = sidebar_fold_one_level,
     ["fold-all"] = sidebar_fold_all,
 
+    ["search"] = sidebar_search,
+
     ["toggle-fold"] = sidebar_toggle_fold,
     ["toggle-inline-details"] = sidebar_toggle_details,
     ["toggle-auto-details-window"] = sidebar_toggle_auto_details,
@@ -2719,26 +2418,25 @@ local sidebar_actions = {
     ["close"] = sidebar_close,
 }
 
-assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
+utils.assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
 
 ---@param sidebar Sidebar
 local function sidebar_on_cursor_move(sidebar)
-    preview_on_cursor_move(sidebar.preview, _sidebar_preview_open_params(sidebar))
-    details_on_cursor_move(sidebar.details, _sidebar_details_open_params(sidebar))
+    sidebar.preview:on_cursor_move()
+    sidebar.details:on_cursor_move()
     if sidebar.auto_peek then sidebar_peek(sidebar) end
 end
 
 ---@param sidebar Sidebar
 local function sidebar_on_scroll(sidebar)
+    -- this function is used only with "symbols" view
     if sidebar.details.win ~= -1 then
-        details_close(sidebar.details)
-        local params = _sidebar_details_open_params(sidebar)()
-        details_open(sidebar.details, params)
+        sidebar.details:close()
+        sidebar.details:open()
     end
     if sidebar.preview.win ~= -1 then
-        preview_close(sidebar.preview)
-        local params = _sidebar_preview_open_params(sidebar)
-        preview_open(sidebar.preview, params)
+        sidebar.preview:close()
+        sidebar.preview:open()
     end
 end
 
@@ -2753,11 +2451,17 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.source_win = vim.api.nvim_get_current_win()
     sidebar.symbols_retriever = symbols_retriever
 
+    sidebar.num = num
     sidebar.gs = gs
 
     sidebar.preview_config = config.preview
-    sidebar.preview.auto_show = config.preview.show_always
     sidebar.preview.sidebar = sidebar
+    sidebar.preview.auto_show = config.preview.show_always
+
+    sidebar.details.sidebar = sidebar
+    sidebar.details.show_debug_info = debug
+
+    sidebar.search_view:init(sidebar)
 
     sidebar.show_inline_details = config.show_inline_details
     sidebar.details.auto_show = config.show_details_pop_up
@@ -2773,10 +2477,9 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.auto_peek = config.auto_peek
     sidebar.close_on_goto = config.close_on_goto
 
-    sidebar.details.show_debug_info = debug
-
     sidebar.buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(sidebar.buf, "Symbols [" .. tostring(num) .. "]")
+    nvim.buf_set_modifiable(sidebar.buf, false)
+    vim.api.nvim_buf_set_name(sidebar.buf, "symbols.nvim [" .. tostring(num) .. "]")
     vim.api.nvim_buf_set_option(sidebar.buf, "filetype", "SymbolsSidebar")
 
     for key, action in pairs(config.keymaps) do
@@ -2802,7 +2505,11 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             callback = function()
-                if not sidebar.cursor_follow or not sidebar_visible(sidebar) then return end
+                if (
+                    not sidebar.cursor_follow or
+                    not sidebar_visible(sidebar) or
+                    sidebar.current_view ~= "symbols"
+                ) then return end
                 local win = vim.api.nvim_get_current_win()
                 if win ~= sidebar.source_win then return end
                 local symbols = sidebar_current_symbols(sidebar)
@@ -2827,8 +2534,8 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             callback = function()
-                preview_on_win_enter(sidebar.preview)
-                details_on_win_enter(sidebar.details, _sidebar_details_open_params(sidebar))
+                sidebar.preview:on_win_enter()
+                sidebar.details:on_win_enter()
                 if vim.api.nvim_get_current_win() == sidebar.win and sidebar.gs.cursor.hide then
                     hide_cursor(sidebar)
                 end
@@ -2842,7 +2549,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
             group = global_autocmd_group,
             callback = function(e)
                 local win = tonumber(e.match, 10)
-                preview_on_win_close(sidebar.preview, win)
+                sidebar.preview:on_win_close(win)
             end,
         }
     )
@@ -2859,7 +2566,7 @@ local function show_debug_in_current_window(sidebars)
     local win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
 
-    buf_modifiable(buf, false)
+    nvim.buf_set_modifiable(buf, false)
 end
 
 ---@param sidebars Sidebar[]
@@ -2917,7 +2624,7 @@ local function setup_dev(gs, sidebars, config)
         unload_package("symbols")
         require("symbols").setup(config)
 
-        vim.cmd("SymbolsLogLevel " .. LOG_LEVEL_CMD_STRING[LOG_LEVEL])
+        vim.cmd("SymbolsLogLevel " .. log.LOG_LEVEL_CMD_STRING[LOG_LEVEL])
 
         log.info("symbols.nvim reloaded")
     end
@@ -2933,7 +2640,7 @@ local function setup_dev(gs, sidebars, config)
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         local win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_buf(win, buf)
-        buf_modifiable(buf, false)
+        nvim.buf_set_modifiable(buf, false)
     end
 
     ---@type table<DevAction, fun()>
@@ -2942,7 +2649,7 @@ local function setup_dev(gs, sidebars, config)
         ["debug"] = debug,
         ["show-config"] = show_config,
     }
-    assert_keys_are_enum(dev_action_to_fun, cfg.DevAction, "dev_action_to_fun")
+    utils.assert_keys_are_enum(dev_action_to_fun, cfg.DevAction, "dev_action_to_fun")
 
     for key, action in pairs(config.dev.keymaps) do
         vim.keymap.set("n", key, dev_action_to_fun[action])
@@ -3069,12 +2776,16 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             for _, sidebar in ipairs(sidebars) do
                 sidebar.details.show_debug_info = config.dev.enabled
             end
-            LOG_LEVEL = (config.dev.enabled and config.dev.log_level) or DEFAULT_LOG_LEVEL
+            LOG_LEVEL = (config.dev.enabled and config.dev.log_level) or log.DEFAULT_LOG_LEVEL
         end,
         {}
     )
 
-    create_change_log_level_user_command("SymbolsLogLevel", "Change the Symbols debug level")
+    log.create_change_log_level_user_command(
+        "SymbolsLogLevel",
+        "Change the Symbols debug level",
+        create_user_command
+    )
 end
 
 ---@param gs GlobalState
@@ -3155,13 +2866,18 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
     )
 
     vim.api.nvim_create_autocmd(
-        { "BufHidden" },
+        { "BufEnter" },
         {
             group = global_autocmd_group,
-            callback = function(t)
+            callback = function(t) -- TODO fix
+                local win = vim.api.nvim_get_current_win()
                 local buf = tonumber(t.buf)
                 for _, sidebar in ipairs(sidebars) do
-                    if sidebar.buf == buf then
+                    if (
+                        sidebar.win == win
+                        and sidebar.buf ~= buf
+                        and sidebar.search_view.buf ~= buf
+                    ) then
                         sidebar_win_restore(sidebar)
                         return
                     end
@@ -3180,12 +2896,11 @@ function M.setup(...)
     gs.settings.open_direction = config.sidebar.open_direction
     gs.settings.on_open_make_windows_equal = config.sidebar.on_open_make_windows_equal
 
-    ---@type Provider[]
+    ---@type [string, Provider][]
     local providers = {
-        LspProvider,
-        TreesitterProvider,
+        { "lsp", providers.LspProvider },
+        { "treesitter", providers.TSProvider },
     }
-
     local symbols_retriever = SymbolsRetriever_new(providers, config.providers)
 
     ---@type Sidebar[]

@@ -26,6 +26,7 @@ M.SidebarAction = {
     FoldRecursively = "fold-recursively",
     FoldOneLevel = "fold-one-level",
     FoldAll = "fold-all",
+    Search = "search",
     ToggleInlineDetails = "toggle-inline-details",
     ToggleAutoDetailsWindow = "toggle-auto-details-window",
     ToggleAutoPreview = "toggle-auto-preview",
@@ -202,6 +203,8 @@ M.default = {
             ["zC"] = "fold-recursively",
             ["zm"] = "fold-one-level",
             ["zM"] = "fold-all",
+
+            ["s"] = "search",
 
             ["td"] = "toggle-inline-details",
             ["tD"] = "toggle-auto-details-window",
