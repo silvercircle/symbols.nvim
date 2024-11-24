@@ -77,7 +77,7 @@ end
 ---@param buf integer
 ---@return boolean
 function LspProvider:supports(buf)
-    local clients = vim.lsp.get_clients({ bufnr = buf, method = "documentSymbolProvider" })
+    local clients = vim.lsp.get_clients({ bufnr = buf, method = vim.lsp.protocol.Methods.textDocument_documentSymbol })
     self.client = clients[1]
     return #clients > 0
 end
@@ -119,7 +119,7 @@ function LspProvider:async_get_symbols(buf, refresh_symbols, on_fail, on_timeout
     end
 
     local params = { textDocument = vim.lsp.util.make_text_document_params(buf), }
-    local ok, request_id = self.client.request("textDocument/documentSymbol", params, handler)
+    local ok, request_id = self.client.request(vim.lsp.protocol.Methods.textDocument_documentSymbol, params, handler)
     if not ok then on_fail() end
 
     vim.defer_fn(
