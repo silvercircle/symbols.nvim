@@ -30,7 +30,7 @@ M.CMD_STRING_LOG_LEVEL = utils.tbl_reverse(M.LOG_LEVEL_CMD_STRING)
 ---@param msg string
 ---@param level any
 local function _log(msg, level)
-    if level >= LOG_LEVEL then
+    if level >= M.LOG_LEVEL then
         local date = os.date("%Y/%m/%d %H:%M:%S")
         local fun = ""
         if level == vim.log.levels.TRACE then
