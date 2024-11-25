@@ -1102,7 +1102,7 @@ function SearchView:jump_to_current_symbol()
     local symbol = self.flat_symbols[search_symbol.i]
     vim.api.nvim_win_set_cursor(
         self.sidebar.source_win,
-        { symbol.range.start.line + 1, symbol.range.start.character }
+        { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
     )
     vim.api.nvim_set_current_win(self.sidebar.source_win)
     vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
