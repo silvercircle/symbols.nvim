@@ -10,7 +10,7 @@ navigation.
 > `symbols.nvim` is in beta. You may encounter bugs and breaking changes.
 > For a more stable experience use tags (e.g. "v0.1.0") with you plugin manager.
 
-https://github.com/user-attachments/assets/a63dd071-882c-4a9c-ac3e-3abe775ef7db
+https://github.com/user-attachments/assets/6262fa59-a320-4043-a3ba-97617f0fd8b3
 
 ## Features
 
