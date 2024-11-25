@@ -1333,7 +1333,7 @@ end
 ---@return Symbols
 sidebar_current_symbols = function(sidebar)
     local source_buf = sidebar_source_win_buf(sidebar)
-    assert(source_buf ~= -1)
+    if source_buf == -1 then return Symbols_new() end
     local symbols = sidebar.buf_symbols[source_buf]
     symbols.buf = source_buf
     return symbols
@@ -1510,8 +1510,8 @@ sidebar_close = function(sidebar)
     sidebar.search_view:hide()
     if vim.api.nvim_win_is_valid(sidebar.win) then
         vim.api.nvim_win_close(sidebar.win, true)
+        sidebar.win = -1
     end
-    sidebar.win = -1
 end
 
 ---@param sidebar Sidebar
@@ -2542,17 +2542,6 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
             end,
         }
     )
-
-    vim.api.nvim_create_autocmd(
-        { "WinClosed" },
-        {
-            group = global_autocmd_group,
-            callback = function(e)
-                local win = tonumber(e.match, 10)
-                sidebar.preview:on_win_close(win)
-            end,
-        }
-    )
 end
 
 local function show_debug_in_current_window(sidebars)
@@ -2828,10 +2817,12 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
             group = global_autocmd_group,
             callback = function(t)
                 local win = tonumber(t.match, 10)
+                local tab_wins = #vim.api.nvim_tabpage_list_wins(0)
                 for _, sidebar in ipairs(sidebars) do
-                    if sidebar.source_win == win then
+                    if tab_wins > 2 and sidebar.source_win == win then
                         sidebar_destroy(sidebar)
-                    elseif sidebar.win == win then
+                    end
+                    if sidebar.win == win then
                         sidebar_close(sidebar)
                     end
                 end
@@ -2865,23 +2856,39 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
         }
     )
 
+    local function try_to_restore_win()
+        local win = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_get_current_buf()
+        for _, sidebar in ipairs(sidebars) do
+            if (
+                sidebar.win == win
+                and sidebar.buf ~= buf
+                and sidebar.search_view.buf ~= buf
+            ) then
+                sidebar_win_restore(sidebar)
+                return
+            end
+        end
+    end
+
+    local function close_last_win()
+        if #vim.api.nvim_tabpage_list_wins(0) > 1 then return end
+        local buf = vim.api.nvim_get_current_buf()
+        for _, sidebar in ipairs(sidebars) do
+            if sidebar.buf == buf or sidebar.search_view.buf == buf then
+                vim.cmd("q")
+                sidebar_destroy(sidebar)
+            end
+        end
+    end
+
     vim.api.nvim_create_autocmd(
         { "BufEnter" },
         {
             group = global_autocmd_group,
-            callback = function(t) -- TODO fix
-                local win = vim.api.nvim_get_current_win()
-                local buf = tonumber(t.buf)
-                for _, sidebar in ipairs(sidebars) do
-                    if (
-                        sidebar.win == win
-                        and sidebar.buf ~= buf
-                        and sidebar.search_view.buf ~= buf
-                    ) then
-                        sidebar_win_restore(sidebar)
-                        return
-                    end
-                end
+            callback = function()
+                try_to_restore_win()
+                close_last_win()
             end
         }
     )
