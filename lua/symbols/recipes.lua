@@ -175,6 +175,14 @@ M.AsciiSymbols = {
                     Function = "def",
                     Method = "def",
                 },
+                ruby = {
+                    Class = "class",
+                    Module = "module",
+                    Property = "attr",
+                    Constant = "const",
+                    Function = "def",
+                    Method = "def",
+                },
                 sh = {
                     Variable = "$",
                     Function = "fun",

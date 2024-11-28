@@ -48,13 +48,80 @@ local LspSymbolKindString = utils.tbl_reverse(LspSymbolKind)
 ---@param parent Symbol?
 ---@param level integer
 local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
-    lsp_symbol.parent = parent
-    lsp_symbol.detail = lsp_symbol.detail or ""
-    lsp_symbol.children = lsp_symbol.children or {}
-    lsp_symbol.kind = LspSymbolKindString[lsp_symbol.kind]
-    lsp_symbol.level = level
-    for _, child in ipairs(lsp_symbol.children) do
-        rec_tidy_lsp_symbol(child, lsp_symbol, level + 1)
+    ---@param lsp_symbol any
+    ---@param parent Symbol?
+    ---@param level integer
+    local function rec_tidy_document_symbol(lsp_symbol, parent, level)
+        if level > 0 then
+            lsp_symbol.kind = LspSymbolKindString[lsp_symbol.kind]
+            lsp_symbol.detail = lsp_symbol.detail or ""
+            lsp_symbol.level = level
+            lsp_symbol.parent = parent
+            lsp_symbol.children = lsp_symbol.children or {}
+            lsp_symbol.tags = nil
+            lsp_symbol.deprecated = nil
+        end
+        for _, child in ipairs(lsp_symbol.children) do
+            rec_tidy_document_symbol(child, lsp_symbol, level + 1)
+        end
+    end
+
+    ---@param lsp_symbol any
+    local function tidy_symbol_information(lsp_symbol)
+        for _, child in ipairs(lsp_symbol.children) do
+            child.kind = LspSymbolKindString[child.kind]
+            child.detail = ""
+            child.level = 1
+            child.parent = lsp_symbol
+            child.children = {}
+            child.range = vim.deepcopy(child.location.range)
+            child.selectionRange = vim.deepcopy(child.location.range)
+            child.tags = nil
+            child.deprecated = nil
+            child.location = nil
+            child.containerName = nil
+        end
+
+        ---@param outer Range
+        ---@param inner Range
+        ---@return boolean
+        local function range_inside(outer, inner)
+            return (
+                outer.start.line < inner.start.line
+                and inner["end"].line < outer["end"].line
+            )
+        end
+
+        local new_children = {}
+        for _, child in ipairs(lsp_symbol.children) do
+            if #new_children == 0 then
+                table.insert(new_children, child)
+                child.level = 1
+            else
+                local prev = new_children
+                local curr = new_children[#new_children]
+                if range_inside(curr.range, child.range) then
+                    while curr ~= nil and range_inside(curr.range, child.range) do
+                        prev = curr
+                        curr = curr.children[#curr.children]
+                    end
+                    table.insert(prev.children, child)
+                    child.parent = prev
+                    child.level = child.parent.level + 1
+                else
+                    table.insert(new_children, child)
+                end
+            end
+        end
+        lsp_symbol.children = new_children
+    end
+
+    if #lsp_symbol.children > 0 then
+        if lsp_symbol.children[1].location == nil then
+            rec_tidy_document_symbol(lsp_symbol, parent, level)
+        else
+            tidy_symbol_information(lsp_symbol)
+        end
     end
 end
 
