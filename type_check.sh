@@ -1,7 +1,7 @@
 PLUGIN="symbols"
 
-LOGS_DIR=luals-logs
-META_DIR=luals-meta
+LOGS_DIR=luals/logs
+META_DIR=luals/meta
 TYPE_CHECK_LOGS_FILE=${LOGS_DIR}/check.json
 
 mkdir -p ${LOGS_DIR}
