@@ -21,7 +21,7 @@
 20|   H2 Learn about org-mode             │                                       
 21|      H3 TODO learn todos               │** Nested headline                     
 22|      H3 TODO learn other stuff         │                                       
-23|symbols.nvim [1]      1,2            Top <es/example.org [RO] 1,1            Top
+23|symbols.nvim [1]      1,2            Top <xamples/example.org 1,1            Top
 24|:Symbols                                                                        
 
 --|---------|---------|---------|---------|---------|---------|---------|---------|

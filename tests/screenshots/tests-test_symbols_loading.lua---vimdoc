@@ -21,7 +21,7 @@
 20|   H2 *MiniTest.finally()*             │                                       
 21|      Tag MiniTest.finally()            │- Hierarchical organization of tests wi
 22|   H2 *MiniTest.run()*                 │th custom hooks, parametrization,      
-23|symbols.nvim [1]      1,2            Top </mini-test.txt [RO] 1,1            Top
+23|symbols.nvim [1]      1,2            Top <mples/mini-test.txt 1,1            Top
 24|:Symbols                                                                        
 
 --|---------|---------|---------|---------|---------|---------|---------|---------|

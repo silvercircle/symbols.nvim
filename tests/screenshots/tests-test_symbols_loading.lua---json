@@ -21,7 +21,7 @@
 20|              String name │              "name": "Anatomy Park"                 
 21|           Object 5      │            },                                       
 22|              String name │            {                                        
-23|<ls.nvim [1] 1,1       Top tests/examples/morty.json [RO]     1,1            Top
+23|<ls.nvim [1] 1,1       Top tests/examples/morty.json          1,1            Top
 24|:Symbols                                                                        
 
 --|---------|---------|---------|---------|---------|---------|---------|---------|
