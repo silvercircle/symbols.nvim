@@ -92,18 +92,13 @@ function Preview:new()
     }, self)
 end
 
-local sidebar_source_win_buf
-local sidebar_close
-local sidebar_current_symbol
-local sidebar_current_symbols
-
 function Preview:close()
     if vim.api.nvim_win_is_valid(self.win) then
         vim.api.nvim_win_close(self.win, true)
     end
     self.locked = false
     self.win = -1
-    local source_buf = sidebar_source_win_buf(self.sidebar)
+    local source_buf = self.sidebar:source_win_buf()
     for _, key in ipairs(self.keymaps_to_remove) do
         vim.keymap.del("n", key, { buffer = source_buf })
     end
@@ -116,7 +111,7 @@ function Preview:goto_symbol()
     vim.api.nvim_set_current_win(self.sidebar.source_win)
     vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
     if self.sidebar.close_on_goto then
-        sidebar_close(self.sidebar)
+        self.sidebar:close()
     end
 end
 
@@ -134,8 +129,8 @@ function Preview:open()
     end
 
     local config = self.sidebar.preview_config
-    local source_buf = sidebar_source_win_buf(self.sidebar)
-    local symbol = sidebar_current_symbol(self.sidebar)
+    local source_buf = self.sidebar:source_win_buf()
+    local symbol = self.sidebar:current_symbol()
     local range = symbol.range
     local selection_range = symbol.selectionRange
     local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
@@ -251,8 +246,8 @@ function DetailsWin:open()
     if vim.api.nvim_win_is_valid(self.win) then return end
 
     local sidebar_win = self.sidebar.win
-    local symbols = sidebar_current_symbols(self.sidebar)
-    local symbol, symbol_state = sidebar_current_symbol(self.sidebar)
+    local symbols = self.sidebar:current_symbols()
+    local symbol, symbol_state = self.sidebar:current_symbol()
 
     local details_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = details_buf })
@@ -283,7 +278,7 @@ function DetailsWin:open()
         table.insert(text, "")
     end
 
-    local ft = vim.api.nvim_get_option_value("ft", { buf = sidebar_source_win_buf(self.sidebar) })
+    local ft = vim.api.nvim_get_option_value("ft", { buf = self.sidebar:source_win_buf() })
     local kinds_cfg = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
     local highlights_cfg = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
 
@@ -734,7 +729,7 @@ end
 ---@param sidebar Sidebar
 local function hide_cursor(sidebar)
     local pos = vim.api.nvim_win_get_cursor(sidebar.win)
-    local any_nesting = sidebar_current_symbols(sidebar).any_nesting
+    local any_nesting = sidebar:current_symbols().any_nesting
     local col = (any_nesting and 1) or 0
     if col ~= pos[2] then
         vim.api.nvim_win_set_cursor(sidebar.win, { pos[1], col })
@@ -746,8 +741,6 @@ local function reset_cursor(cursor)
     vim.o.guicursor = cursor.original
     cursor.hidden = false
 end
-
-local sidebar_change_view
 
 ---@class (exact) SearchView
 ---@field sidebar Sidebar
@@ -813,7 +806,7 @@ function SearchView:init_buf()
 
     vim.keymap.set(
         "n", "q",
-        function() sidebar_close(self.sidebar) end,
+        function() self.sidebar:close() end,
         { buffer = self.buf }
     )
     vim.keymap.set(
@@ -910,9 +903,9 @@ function SearchView:init_prompt_buf()
             self:save_history()
             self:jump_to_current_symbol()
             if self.sidebar.close_on_goto then
-                sidebar_close(self.sidebar)
+                self.sidebar:close()
             else
-                sidebar_change_view(self.sidebar, "symbols")
+                self.sidebar:change_view("symbols")
             end
         end,
         { buffer = self.prompt_buf }
@@ -1047,7 +1040,7 @@ end
 ---@return Highlight[]
 function SearchView:_search_symbols_highlights(search_symbols, flat_symbols)
     local highlights = {} ---@type Highlight[]
-    local symbols = sidebar_current_symbols(self.sidebar)
+    local symbols = self.sidebar:current_symbols()
     local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
     local highlights_config = cfg.get_config_by_filetype(symbols.provider_config.highlights, ft)
     local kinds_display_config = cfg.get_config_by_filetype(symbols.provider_config.kinds, ft)
@@ -1068,8 +1061,8 @@ end
 
 function SearchView:search()
     local text = self:get_prompt_text()
-    local symbols = sidebar_current_symbols(self.sidebar)
-    local source_buf = sidebar_source_win_buf(self.sidebar)
+    local symbols = self.sidebar:current_symbols()
+    local source_buf = self.sidebar:source_win_buf()
     local ft = vim.api.nvim_get_option_value("filetype", { buf = source_buf })
     local search_symbols
     search_symbols, self.flat_symbols = _prepare_symbols_for_search(symbols, ft)
@@ -1123,7 +1116,7 @@ function SearchView:show_prompt()
     vim.keymap.set(
         "n", "<Esc>",
         function()
-            sidebar_change_view(self.sidebar, "symbols")
+            self.sidebar:change_view("symbols")
         end,
         { buffer = self.buf }
     )
@@ -1133,9 +1126,9 @@ function SearchView:show_prompt()
             self:save_history()
             self:jump_to_current_symbol()
             if self.sidebar.close_on_goto then
-                sidebar_close(self.sidebar)
+                self.sidebar:close()
             else
-                sidebar_change_view(self.sidebar, "symbols")
+                self.sidebar:change_view("symbols")
             end
         end,
         { buffer = self.buf }
@@ -1163,7 +1156,7 @@ end
 
 ---@alias SidebarView "symbols" | "search"
 
----@class Sidebar
+---@class (exact) Sidebar
 ---@field num integer Ordering number, used for naming buffers.
 ---@field gs GlobalState
 ---@field deleted boolean
@@ -1174,7 +1167,6 @@ end
 ---@field search_view SearchView
 ---@field buf integer
 ---@field source_win integer
----@field visible boolean
 ---@field symbols_retriever SymbolsRetriever
 ---@field buf_symbols table<integer, Symbols>
 ---@field lines table<Symbol, integer>
@@ -1194,11 +1186,15 @@ end
 ---@field cursor_follow boolean
 ---@field auto_peek boolean
 ---@field close_on_goto boolean
+local Sidebar = {}
+Sidebar.__index = Sidebar ---@diagnostic disable-line
 
 ---@return Sidebar
-local function sidebar_new_obj()
+function Sidebar:new()
     local config = cfg.default.sidebar
-    local sidebar = {
+    ---@type Sidebar
+    local s = {
+        num = -1,
         gs = GlobalState_new(),
         deleted = false,
         win = -1,
@@ -1208,11 +1204,12 @@ local function sidebar_new_obj()
         search_view = SearchView:new(),
         buf = -1,
         source_win = -1,
-        visible = false,
+        symbols_retriever = nil, ---@diagnostic disable-line
         symbols_cache = SymbolsCache_new(),
         buf_symbols = vim.defaulttable(Symbols_new),
         lines = {},
         symbol_display_config = {},
+        preview_config = config.preview,
         preview = Preview:new(),
         details = DetailsWin:new(),
         char_config = config.chars,
@@ -1227,46 +1224,44 @@ local function sidebar_new_obj()
         symbol_filter = config.symbol_filter,
         cursor_follow = config.cursor_follow,
         auto_peek = config.auto_peek,
+        close_on_goto = config.close_on_goto,
     }
-    return sidebar
+    return setmetatable(s, self)
+
 end
 
----@param sidebar Sidebar
-local function sidebar_visible(sidebar)
-    return sidebar.win ~= -1
+---@return boolean
+function Sidebar:visible()
+    return self.win ~= -1
 end
 
----@param sidebar Sidebar
 ---@return integer
-sidebar_source_win_buf = function(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.source_win) then
-        return vim.api.nvim_win_get_buf(sidebar.source_win)
+function Sidebar:source_win_buf()
+    if vim.api.nvim_win_is_valid(self.source_win) then
+        return vim.api.nvim_win_get_buf(self.source_win)
     end
     return -1
 end
 
-local sidebar_refresh_view
-
----@param sidebar Sidebar
 ---@param new_view SidebarView
-sidebar_change_view = function(sidebar, new_view)
-    if sidebar.current_view == "symbols" then
-    elseif sidebar.current_view == "search" then
-        sidebar.search_view:hide()
+function Sidebar:change_view(new_view)
+    if self.current_view == "symbols" then
+    elseif self.current_view == "search" then
+        self.search_view:hide()
     else
-        assert(false, "Unknown view: " .. tostring(sidebar.current_view))
+        assert(false, "Unknown view: " .. tostring(self.current_view))
     end
 
     if new_view == "symbols" then
-        vim.api.nvim_win_set_buf(sidebar.win, sidebar.buf)
-        sidebar_refresh_view(sidebar)
+        vim.api.nvim_win_set_buf(self.win, self.buf)
+        self:refresh_view()
     elseif new_view == "search" then
-        sidebar.search_view:show()
+        self.search_view:show()
     else
         assert(false, "Unknown view: " .. tostring(new_view))
     end
 
-    sidebar.current_view = new_view
+    self.current_view = new_view
 end
 
 ---@param root Symbol
@@ -1330,39 +1325,37 @@ local function symbol_at_pos(root, pos)
     return current
 end
 
----@param sidebar Sidebar
 ---@return Symbols
-sidebar_current_symbols = function(sidebar)
-    local source_buf = sidebar_source_win_buf(sidebar)
+function Sidebar:current_symbols()
+    local source_buf = self:source_win_buf()
     if source_buf == -1 then return Symbols_new() end
-    local symbols = sidebar.buf_symbols[source_buf]
+    local symbols = self.buf_symbols[source_buf]
     symbols.buf = source_buf
     return symbols
 end
 
----@parm sidebar Sidebar
 ---@param symbols Symbols
-local function sidebar_replace_current_symbols(sidebar, symbols)
+function Sidebar:replace_current_symbols(symbols)
     assert(symbols.buf ~= -1, "symbols.buf has to be set")
-    sidebar.buf_symbols[symbols.buf] = symbols
+    self.buf_symbols[symbols.buf] = symbols
 end
 
 ---@return string
-local function sidebar_str(sidebar)
+function Sidebar:to_string()
     local tab = -1
-    if vim.api.nvim_win_is_valid(sidebar.win) then
-        tab = vim.api.nvim_win_get_tabpage(sidebar.win)
+    if vim.api.nvim_win_is_valid(self.win) then
+        tab = vim.api.nvim_win_get_tabpage(self.win)
     end
 
     local buf_name = ""
-    if vim.api.nvim_buf_is_valid(sidebar.buf) then
-        buf_name = " (" .. vim.api.nvim_buf_get_name(sidebar.buf) .. ")"
+    if vim.api.nvim_buf_is_valid(self.buf) then
+        buf_name = " (" .. vim.api.nvim_buf_get_name(self.buf) .. ")"
     end
 
     local source_win_buf = -1
     local source_win_buf_name = ""
-    if vim.api.nvim_win_is_valid(sidebar.source_win) then
-        source_win_buf = vim.api.nvim_win_get_buf(sidebar.source_win)
+    if vim.api.nvim_win_is_valid(self.source_win) then
+        source_win_buf = vim.api.nvim_win_get_buf(self.source_win)
         source_win_buf_name = vim.api.nvim_buf_get_name(source_win_buf)
         if source_win_buf_name == "" then
             source_win_buf_name = " <scratch buffer>"
@@ -1371,24 +1364,22 @@ local function sidebar_str(sidebar)
         end
     end
 
-
     local lines = {
         "Sidebar(",
-        "  deleted: " .. tostring(sidebar.deleted),
-        "  visible: " .. tostring(sidebar_visible(sidebar)),
+        "  deleted: " .. tostring(self.deleted),
+        "  visible: " .. tostring(self:visible()),
         "  tab: " .. tostring(tab),
-        "  win: " .. tostring(sidebar.win),
-        "  buf: " .. tostring(sidebar.buf) .. buf_name,
-        "  source_win: " .. tostring(sidebar.source_win),
+        "  win: " .. tostring(self.win),
+        "  buf: " .. tostring(self.buf) .. buf_name,
+        "  source_win: " .. tostring(self.source_win),
         "  source_win_buf: " .. tostring(source_win_buf) .. source_win_buf_name,
         "  buf_symbols: {",
     }
 
-    for buf, root_symbol in pairs(sidebar.buf_symbols) do
+    for buf, root_symbol in pairs(self.buf_symbols) do
         local _buf_name = vim.api.nvim_buf_get_name(buf)
-
         local symbols_count_string = " (no symbols)"
-        local symbols_count = #root_symbol.children
+        local symbols_count = #root_symbol.root.children
         if symbols_count > 0 then
             symbols_count_string = " (" .. tostring(symbols_count) .. "+ symbols)"
         end
@@ -1402,31 +1393,29 @@ local function sidebar_str(sidebar)
     return table.concat(lines, "\n")
 end
 
----@param sidebar Sidebar
 ---@param vert_size integer
-local function sidebar_change_size(sidebar, vert_size)
+function Sidebar:change_size(vert_size)
     local original_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(sidebar.win)
+    vim.api.nvim_set_current_win(self.win)
     vim.cmd("vertical resize " .. tostring(vert_size))
     vim.api.nvim_set_current_win(original_win)
 end
 
----@param sidebar Sidebar
 ---@param buf_lines string[] | nil
-local function sidebar_refresh_size(sidebar, buf_lines)
-    if not sidebar_visible(sidebar) or not sidebar.auto_resize.enabled then return end
-    local vert_resize = sidebar.fixed_width
+function Sidebar:refresh_size(buf_lines)
+    if not self:visible() or not self.auto_resize.enabled then return end
+    local vert_resize = self.fixed_width
     if buf_lines == nil then
-        buf_lines = vim.api.nvim_buf_get_lines(sidebar.buf, 0, -1, false)
+        buf_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
     end
     local max_line_len = 0
     for _, line in ipairs(buf_lines) do
         max_line_len = math.max(max_line_len, #line)
     end
     vert_resize = max_line_len + 1
-    vert_resize = math.max(sidebar.auto_resize.min_width, vert_resize)
-    vert_resize = math.min(sidebar.auto_resize.max_width, vert_resize)
-    sidebar_change_size(sidebar, vert_resize)
+    vert_resize = math.max(self.auto_resize.min_width, vert_resize)
+    vert_resize = math.min(self.auto_resize.max_width, vert_resize)
+    self:change_size(vert_resize)
 end
 
 ---@param dir OpenDirection
@@ -1450,41 +1439,40 @@ local function find_split_direction(dir)
     assert(false, "invalid dir")
 end
 
----@param sidebar Sidebar
 ---@return integer, "left" | "right"
-local function sidebar_open_bare_win(sidebar)
-    local dir = find_split_direction(sidebar.gs.settings.open_direction)
-    local width = sidebar.fixed_width
+function Sidebar:open_bare_win()
+    local dir = find_split_direction(self.gs.settings.open_direction)
+    local width = self.fixed_width
     local dir_cmd = (dir == "left" and "leftabove") or "rightbelow"
     vim.cmd("vertical " .. dir_cmd .. " " .. tostring(width) .. "split")
     return vim.api.nvim_get_current_win(), dir
 end
 
-local function sidebar_open(sidebar)
-    if sidebar_visible(sidebar) then return end
+function Sidebar:open()
+    if self:visible() then return end
 
     local original_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(sidebar.source_win)
-    sidebar.win, sidebar.win_dir = sidebar_open_bare_win(sidebar)
+    vim.api.nvim_set_current_win(self.source_win)
+    self.win, self.win_dir = self:open_bare_win()
     vim.api.nvim_set_current_win(original_win)
-    vim.api.nvim_win_set_buf(sidebar.win, sidebar.buf)
+    vim.api.nvim_win_set_buf(self.win, self.buf)
 
-    sidebar.win_settings = WinSettings_get(sidebar.win)
+    self.win_settings = WinSettings_get(self.win)
     WinSettings_apply(
-        sidebar.win,
+        self.win,
         {
             number = false,
             relativenumber = false,
             signcolumn = "no",
             cursorline = true,
             winfixwidth = true,
-            wrap = sidebar.wrap,
+            wrap = self.wrap,
         }
     )
 
-    sidebar_change_size(sidebar, sidebar.fixed_width)
-    sidebar_refresh_size(sidebar, nil)
-    if sidebar.gs.settings.on_open_make_windows_equal then
+    self:change_size(self.fixed_width)
+    self:refresh_size(nil)
+    if self.gs.settings.on_open_make_windows_equal then
         vim.cmd("wincmd =")
     end
 end
@@ -1495,44 +1483,41 @@ local function symbols_view_close(sidebar)
 end
 
 --- Restore window state to default. Useful when opening a file in the sidebar window.
----@param sidebar Sidebar
-local function sidebar_win_restore(sidebar)
-    symbols_view_close(sidebar)
-    sidebar.search_view:hide()
-    WinSettings_apply(sidebar.win, sidebar.win_settings)
-    reset_cursor(sidebar.gs.cursor)
-    sidebar.win = -1
+function Sidebar:win_restore()
+    symbols_view_close(self)
+    self.search_view:hide()
+    WinSettings_apply(self.win, self.win_settings)
+    reset_cursor(self.gs.cursor)
+    self.win = -1
     vim.cmd("wincmd =")
 end
 
-sidebar_close = function(sidebar)
-    if not sidebar_visible(sidebar) then return end
-    symbols_view_close(sidebar)
-    sidebar.search_view:hide()
-    if vim.api.nvim_win_is_valid(sidebar.win) then
-        vim.api.nvim_win_close(sidebar.win, true)
-        sidebar.win = -1
+function Sidebar:close()
+    if not self:visible() then return end
+    symbols_view_close(self)
+    self.search_view:hide()
+    if vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_win_close(self.win, true)
+        self.win = -1
     end
 end
 
----@param sidebar Sidebar
-local function sidebar_destroy(sidebar)
-    sidebar_close(sidebar)
-    if vim.api.nvim_buf_is_valid(sidebar.buf) then
-        vim.api.nvim_buf_delete(sidebar.buf, { force = true })
-        sidebar.buf = -1
+function Sidebar:destroy()
+    self:close()
+    if vim.api.nvim_buf_is_valid(self.buf) then
+        vim.api.nvim_buf_delete(self.buf, { force = true })
+        self.buf = -1
     end
-    sidebar.search_view:destroy()
-    sidebar.source_win = -1
-    sidebar.deleted = true
+    self.search_view:destroy()
+    self.source_win = -1
+    self.deleted = true
 end
 
----@param sidebar Sidebar
 ---@return Symbol, SymbolState
-sidebar_current_symbol = function(sidebar)
-    assert(vim.api.nvim_win_is_valid(sidebar.win))
+function Sidebar:current_symbol()
+    assert(vim.api.nvim_win_is_valid(self.win))
 
-    local symbols = sidebar_current_symbols(sidebar)
+    local symbols = self:current_symbols()
 
     ---@param symbol Symbol
     ---@param num integer
@@ -1552,7 +1537,7 @@ sidebar_current_symbol = function(sidebar)
         return symbol, num
     end
 
-    local line = vim.api.nvim_win_get_cursor(sidebar.win)[1]
+    local line = vim.api.nvim_win_get_cursor(self.win)[1]
     local s, _ = _find_symbol(symbols.root, line)
     return s, symbols.states[s]
 end
@@ -1708,33 +1693,31 @@ local function sidebar_add_inline_details(buf, details)
     end
 end
 
----@param sidebar Sidebar
-sidebar_refresh_view = function(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
+function Sidebar:refresh_view()
+    local symbols = self:current_symbols()
 
     local buf_lines, highlights = sidebar_get_buf_lines_and_highlights(
-        symbols, sidebar.char_config, sidebar.show_guide_lines
+        symbols, self.char_config, self.show_guide_lines
     )
 
-    sidebar.lines = get_line_for_each_symbol(symbols)
+    self.lines = get_line_for_each_symbol(symbols)
 
-    nvim.buf_set_content(sidebar.buf, buf_lines)
+    nvim.buf_set_content(self.buf, buf_lines)
 
     for _, highlight in ipairs(highlights) do
-        highlight:apply(sidebar.buf)
+        highlight:apply(self.buf)
     end
 
-    if sidebar.show_inline_details then
+    if self.show_inline_details then
         local details = sidebar_get_inline_details(symbols)
-        sidebar_add_inline_details(sidebar.buf, details)
+        sidebar_add_inline_details(self.buf, details)
     end
 
-    sidebar_refresh_size(sidebar, buf_lines)
+    self:refresh_size(buf_lines)
 end
 
----@param sidebar Sidebar
-local function sidebar_refresh_symbols(sidebar)
-    if not sidebar_visible(sidebar) then
+function Sidebar:refresh_symbols()
+    if not self:visible() then
         log.trace("Skipping")
         return
     else
@@ -1773,26 +1756,26 @@ local function sidebar_refresh_symbols(sidebar)
     ---@param provider string
     ---@param provider_config table
     local function _refresh_sidebar(new_root, provider, provider_config)
-        local current_symbols = sidebar_current_symbols(sidebar)
+        local current_symbols = self:current_symbols()
         local new_symbols = Symbols_new()
         new_symbols.provider = provider
         new_symbols.provider_config = provider_config
-        new_symbols.buf = sidebar_source_win_buf(sidebar)
+        new_symbols.buf = self:source_win_buf()
         new_symbols.root = new_root
         new_symbols.states = SymbolStates_build(new_root)
         preserve_folds(current_symbols, new_symbols)
-        local symbols_filter = (sidebar.symbol_filters_enabled and sidebar.symbol_filter)
+        local symbols_filter = (self.symbol_filters_enabled and self.symbol_filter)
             or function(_, _) return true end
         Symbols_apply_filter(new_symbols, symbols_filter)
-        sidebar_replace_current_symbols(sidebar, new_symbols)
-        sidebar_refresh_view(sidebar)
+        self:replace_current_symbols(new_symbols)
+        self:refresh_view()
     end
 
     ---@param provider_name string
     local function on_fail(provider_name)
         local lines = { "", " [symbols.nvim]", "", " " .. provider_name .. " provider failed" }
-        nvim.buf_set_content(sidebar.buf, lines)
-        sidebar_refresh_size(sidebar, lines)
+        nvim.buf_set_content(self.buf, lines)
+        self:refresh_size(lines)
     end
 
     ---@param provider_name string
@@ -1801,24 +1784,24 @@ local function sidebar_refresh_symbols(sidebar)
             "", " [symbols.nvim]", "", " " .. provider_name .. " provider timed out",
             "", " Try again or increase", " timeout in config."
         }
-        nvim.buf_set_content(sidebar.buf, lines)
-        sidebar_refresh_size(sidebar, lines)
+        nvim.buf_set_content(self.buf, lines)
+        self:refresh_size(lines)
     end
 
-    local buf = sidebar_source_win_buf(sidebar)
+    local buf = self:source_win_buf()
     local ok = SymbolsRetriever_retrieve(
-        sidebar.symbols_retriever, buf, _refresh_sidebar, on_fail, on_timeout
+        self.symbols_retriever, buf, _refresh_sidebar, on_fail, on_timeout
     )
     if not ok then
-        local ft = vim.bo[sidebar_source_win_buf(sidebar)].ft
+        local ft = vim.bo[self:source_win_buf()].ft
         local lines
         if ft == "" then
             lines = { "", " [symbols.nvim]", "", " no filetype detected" }
         else
             lines = { "", " [symbols.nvim]", "", " no provider supporting", " " .. ft .. " found" }
         end
-        nvim.buf_set_content(sidebar.buf, lines)
-        sidebar_refresh_size(sidebar, lines)
+        nvim.buf_set_content(self.buf, lines)
+        self:refresh_size(lines)
     end
 end
 
@@ -1846,11 +1829,10 @@ local function symbol_change_folded_rec(symbols, start_symbol, value, depth_limi
     return _change_folded_rec(start_symbol, depth_limit)
 end
 
----@param sidebar Sidebar
 ---@param target Symbol
 ---@param unfold boolean
-local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
-    local symbols = sidebar_current_symbols(sidebar)
+function Sidebar:set_cursor_at_symbol(target, unfold)
+    local symbols = self:current_symbols()
 
     ---@param outer_range Range
     ---@param inner_range Range
@@ -1912,8 +1894,8 @@ local function sidebar_set_cursor_at_symbol(sidebar, target, unfold)
     end
 
     if lines == 0 then lines = 1 end
-    if unfold then sidebar_refresh_view(sidebar) end
-    vim.api.nvim_win_set_cursor(sidebar.win, { lines, 0 })
+    if unfold then self:refresh_view() end
+    vim.api.nvim_win_set_cursor(self.win, { lines, 0 })
 end
 
 ---@param win integer
@@ -1951,68 +1933,61 @@ local function sidebar_show_toggle_notification(win, setting, value)
     )
 end
 
----@param sidebar Sidebar
-local function _sidebar_goto_symbol(sidebar)
-    local symbol = sidebar_current_symbol(sidebar)
-    vim.api.nvim_set_current_win(sidebar.source_win)
+function Sidebar:_goto_symbol()
+    local symbol = self:current_symbol()
+    vim.api.nvim_set_current_win(self.source_win)
     vim.api.nvim_win_set_cursor(
-        sidebar.source_win,
+        self.source_win,
         { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
     )
-    vim.fn.win_execute(sidebar.source_win, "normal! zz")
-    flash_highlight_under_cursor(sidebar.source_win, 400, 1)
+    vim.fn.win_execute(self.source_win, "normal! zz")
+    flash_highlight_under_cursor(self.source_win, 400, 1)
 end
 
----@param sidebar Sidebar
-local function sidebar_goto_symbol(sidebar)
-    _sidebar_goto_symbol(sidebar)
-    if sidebar.close_on_goto then sidebar_close(sidebar) end
+function Sidebar:goto_symbol()
+    self:_goto_symbol()
+    if self.close_on_goto then self:close() end
 end
 
----@param sidebar Sidebar
-local function sidebar_preview_open(sidebar)
-    sidebar.preview:open()
+function Sidebar:preview_open()
+    self.preview:open()
 end
 
----@param sidebar Sidebar
-local function sidebar_peek(sidebar)
-    local reopen_details = sidebar.details.win ~= -1
-    if reopen_details then sidebar.details:close() end
-    local reopen_preview = sidebar.preview.win ~= -1
-    if reopen_preview then sidebar.preview:close() end
-    _sidebar_goto_symbol(sidebar)
-    vim.api.nvim_set_current_win(sidebar.win)
-    if reopen_details then sidebar.details:open() end
-    if reopen_preview then sidebar_preview_open(sidebar) end
+function Sidebar:peek()
+    local reopen_details = self.details.win ~= -1
+    if reopen_details then self.details:close() end
+    local reopen_preview = self.preview.win ~= -1
+    if reopen_preview then self.preview:close() end
+    self:_goto_symbol()
+    vim.api.nvim_set_current_win(self.win)
+    if reopen_details then self.details:open() end
+    if reopen_preview then self:preview_open() end
 end
 
----@param sidebar Sidebar
-local function sidebar_show_symbol_under_cursor(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
-    local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
+function Sidebar:show_symbol_under_cursor()
+    local symbols = self:current_symbols()
+    local pos = Pos_from_point(vim.api.nvim_win_get_cursor(self.source_win))
     local symbol = symbol_at_pos(symbols.root, pos)
-    sidebar_set_cursor_at_symbol(sidebar, symbol, true)
+    self:set_cursor_at_symbol(symbol, true)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_show_details(sidebar)
-    if vim.api.nvim_win_is_valid(sidebar.details.win) then
-        sidebar.details:close()
+function Sidebar:toggle_show_details()
+    if vim.api.nvim_win_is_valid(self.details.win) then
+        self.details:close()
     else
-        sidebar.details:open()
+        self.details:open()
     end
 end
 
----@param sidebar Sidebar
-local function sidebar_goto_parent(sidebar)
-    local symbol, _ = sidebar_current_symbol(sidebar)
+function Sidebar:goto_parent()
+    local symbol, _ = self:current_symbol()
     local count = math.max(vim.v.count, 1)
     while count > 0 and symbol.level > 1 do
         symbol = symbol.parent
         assert(symbol ~= nil)
         count = count - 1
     end
-    sidebar_set_cursor_at_symbol(sidebar, symbol, false)
+    self:set_cursor_at_symbol(symbol, false)
 end
 
 ---@param list Symbol[]
@@ -2027,57 +2002,51 @@ local function find_symbol_in_list(list, symbol)
     return i
 end
 
----@param sidebar Sidebar
-local function sidebar_prev_symbol_at_level(sidebar)
-    local symbol, _ = sidebar_current_symbol(sidebar)
+function Sidebar:prev_symbol_at_level()
+    local symbol, _ = self:current_symbol()
     local symbol_idx = find_symbol_in_list(symbol.parent.children, symbol)
     assert(symbol_idx ~= -1, "symbol not found")
     local count = math.max(vim.v.count, 1)
     local new_idx = math.max(symbol_idx - count, 1)
-    sidebar_set_cursor_at_symbol(sidebar, symbol.parent.children[new_idx], false)
+    self:set_cursor_at_symbol(symbol.parent.children[new_idx], false)
 end
 
----@param sidebar Sidebar
-local function sidebar_next_symbol_at_level(sidebar)
-    local symbol, _ = sidebar_current_symbol(sidebar)
+function Sidebar:next_symbol_at_level()
+    local symbol, _ = self:current_symbol()
     local symbol_idx = find_symbol_in_list(symbol.parent.children, symbol)
     assert(symbol_idx ~= -1, "symbol not found")
     local count = math.max(vim.v.count, 1)
     local new_idx = math.min(symbol_idx + count, #symbol.parent.children)
-    sidebar_set_cursor_at_symbol(sidebar, symbol.parent.children[new_idx], false)
+    self:set_cursor_at_symbol(symbol.parent.children[new_idx], false)
 end
 
----@param sidebar Sidebar
-local function sidebar_unfold(sidebar)
-    local _, state = sidebar_current_symbol(sidebar)
+function Sidebar:unfold()
+    local _, state = self:current_symbol()
     state.folded = false
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_fold(sidebar)
-    local symbol, state = sidebar_current_symbol(sidebar)
+function Sidebar:fold()
+    local symbol, state = self:current_symbol()
     if symbol.level > 1 and (state.folded or #symbol.children == 0) then
         symbol = symbol.parent
         assert(symbol ~= nil)
     end
     state.folded = true
-    sidebar_refresh_view(sidebar)
-    move_cursor_to_symbol(sidebar, symbol)
+    self:refresh_view()
+    move_cursor_to_symbol(self, symbol)
 end
 
----@param sidebar Sidebar
-local function sidebar_unfold_recursively(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
-    local symbol, _ = sidebar_current_symbol(sidebar)
+function Sidebar:unfold_recursively()
+    local symbols = self:current_symbols()
+    local symbol, _ = self:current_symbol()
     symbol_change_folded_rec(symbols, symbol, false, utils.MAX_INT)
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_fold_recursively(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
-    local symbol = sidebar_current_symbol(sidebar)
+function Sidebar:fold_recursively()
+    local symbols = self:current_symbols()
+    local symbol = self:current_symbol()
     local changes = symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     if changes == 0 then
         while(symbol.level > 1) do
@@ -2086,14 +2055,12 @@ local function sidebar_fold_recursively(sidebar)
         end
         symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     end
-    sidebar_refresh_view(sidebar)
-    move_cursor_to_symbol(sidebar, symbol)
+    self:refresh_view()
+    move_cursor_to_symbol(self, symbol)
 end
 
----@param sidebar Sidebar
-local function sidebar_unfold_one_level(sidebar)
-
-    local symbols = sidebar_current_symbols(sidebar)
+function Sidebar:unfold_one_level()
+    local symbols = self:current_symbols()
 
     ---@param symbol Symbol
     ---@return integer
@@ -2113,12 +2080,11 @@ local function sidebar_unfold_one_level(sidebar)
     local level = find_level_to_unfold(symbols.root)
     local count = math.max(vim.v.count, 1)
     symbol_change_folded_rec(symbols, symbols.root, false, level + count)
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_fold_one_level(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
+function Sidebar:fold_one_level()
+    local symbols = self:current_symbols()
 
     ---@param symbol Symbol
     ---@return integer
@@ -2153,112 +2119,98 @@ local function sidebar_fold_one_level(sidebar)
     for i=1,math.min(level, count) do
         _change_fold_at_level(symbols, level - i + 1, true)
     end
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_unfold_all(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
+function Sidebar:unfold_all()
+    local symbols = self:current_symbols()
     symbol_change_folded_rec(symbols, symbols.root, false, utils.MAX_INT)
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_fold_all(sidebar)
-    local symbols = sidebar_current_symbols(sidebar)
+function Sidebar:fold_all()
+    local symbols = self:current_symbols()
     symbol_change_folded_rec(symbols, symbols.root, true, utils.MAX_INT)
     symbols.states[symbols.root].folded = false
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_search(sidebar)
-    sidebar_change_view(sidebar, "search")
+function Sidebar:search()
+    self:change_view("search")
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_fold(sidebar)
-    local symbol, state = sidebar_current_symbol(sidebar)
+function Sidebar:toggle_fold()
+    local symbol, state = self:current_symbol()
     if #symbol.children == 0 then return end
     state.folded = not state.folded
-    sidebar_refresh_view(sidebar)
+    self:refresh_view()
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_details(sidebar)
-    sidebar.show_inline_details = not sidebar.show_inline_details
-    sidebar_refresh_view(sidebar)
-    sidebar_show_toggle_notification(sidebar.win, "inline details", sidebar.show_inline_details)
+function Sidebar:toggle_details()
+    self.show_inline_details = not self.show_inline_details
+    self:refresh_view()
+    sidebar_show_toggle_notification(self.win, "inline details", self.show_inline_details)
 end
 
-local function sidebar_toggle_auto_details(sidebar)
-    sidebar.details:toggle_auto_show()
-    sidebar_show_toggle_notification(sidebar.win, "auto details win", sidebar.details.auto_show)
+function Sidebar:toggle_auto_details()
+    self.details:toggle_auto_show()
+    sidebar_show_toggle_notification(self.win, "auto details win", self.details.auto_show)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_auto_preview(sidebar)
-    sidebar.preview:toggle_auto_show()
-    sidebar_show_toggle_notification(sidebar.win, "auto preview win", sidebar.preview.auto_show)
+function Sidebar:toggle_auto_preview()
+    self.preview:toggle_auto_show()
+    sidebar_show_toggle_notification(self.win, "auto preview win", self.preview.auto_show)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_cursor_hiding(sidebar)
-    local cursor = sidebar.gs.cursor
+function Sidebar:toggle_cursor_hiding()
+    local cursor = self.gs.cursor
     if cursor.hide then
         reset_cursor(cursor)
     else
         activate_cursorline(cursor)
     end
     cursor.hide = not cursor.hide
-    sidebar_show_toggle_notification(sidebar.win, "cursor hiding", cursor.hide)
+    sidebar_show_toggle_notification(self.win, "cursor hiding", cursor.hide)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_cursor_follow(sidebar)
-    sidebar.cursor_follow = not sidebar.cursor_follow
-    sidebar_show_toggle_notification(sidebar.win, "cursor follow", sidebar.cursor_follow)
+function Sidebar:toggle_cursor_follow()
+    self.cursor_follow = not self.cursor_follow
+    sidebar_show_toggle_notification(self.win, "cursor follow", self.cursor_follow)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_filters(sidebar)
-    sidebar.symbol_filters_enabled = not sidebar.symbol_filters_enabled
-    sidebar_refresh_symbols(sidebar)
-    sidebar_show_toggle_notification(sidebar.win, "symbol filters", sidebar.symbol_filters_enabled)
+function Sidebar:toggle_filters()
+    self.symbol_filters_enabled = not self.symbol_filters_enabled
+    self:refresh_symbols()
+    sidebar_show_toggle_notification(self.win, "symbol filters", self.symbol_filters_enabled)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_auto_peek(sidebar)
-    sidebar.auto_peek = not sidebar.auto_peek
-    sidebar_show_toggle_notification(sidebar.win, "auto peek", sidebar.auto_peek)
+function Sidebar:toggle_auto_peek()
+    self.auto_peek = not self.auto_peek
+    sidebar_show_toggle_notification(self.win, "auto peek", self.auto_peek)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_close_on_goto(sidebar)
-    sidebar.close_on_goto = not sidebar.close_on_goto
-    sidebar_show_toggle_notification(sidebar.win, "close on goto", sidebar.close_on_goto)
+function Sidebar:toggle_close_on_goto()
+    self.close_on_goto = not self.close_on_goto
+    sidebar_show_toggle_notification(self.win, "close on goto", self.close_on_goto)
 end
 
----@param sidebar Sidebar
-local function sidebar_toggle_auto_resize(sidebar)
-    sidebar.auto_resize.enabled = not sidebar.auto_resize.enabled
-    sidebar_show_toggle_notification(sidebar.win, "auto resize", sidebar.auto_resize.enabled)
+function Sidebar:toggle_auto_resize()
+    self.auto_resize.enabled = not self.auto_resize.enabled
+    sidebar_show_toggle_notification(self.win, "auto resize", self.auto_resize.enabled)
 end
 
----@param sidebar Sidebar
-local function sidebar_decrease_max_width(sidebar)
+function Sidebar:decrease_max_width()
     local count = 5 * ((vim.v.count == 0 and 1) or vim.v.count)
     vim.cmd("vert resize -" .. tostring(count))
-    sidebar.auto_resize.max_width = sidebar.auto_resize.max_width - count
-    sidebar_refresh_size(sidebar, nil)
+    self.auto_resize.max_width = self.auto_resize.max_width - count
+    self:refresh_size(nil)
 end
 
----@param sidebar Sidebar
-local function sidebar_increase_max_width(sidebar)
+function Sidebar:increase_max_width()
     local count = 5 * ((vim.v.count == 0 and 1) or vim.v.count)
     vim.cmd("vert resize " .. tostring(count))
-    sidebar.auto_resize.max_width = sidebar.auto_resize.max_width + count
-    sidebar_refresh_size(sidebar, nil)
+    self.auto_resize.max_width = self.auto_resize.max_width + count
+    self:refresh_size(nil)
 end
 
 ---@type SidebarAction[]
@@ -2303,16 +2255,15 @@ for num, action in ipairs(help_options_order) do
     action_order[action] = num
 end
 
----@param sidebar Sidebar
-local function sidebar_help(sidebar)
+function Sidebar:help()
     local help_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = help_buf })
-    vim.api.nvim_buf_set_option(sidebar.buf, "filetype", "SymbolsHelp")
+    vim.api.nvim_buf_set_option(self.buf, "filetype", "SymbolsHelp")
 
     local keymaps = {}
     for i=1,#help_options_order do keymaps[i] = {} end
 
-    for key, action in pairs(sidebar.keymaps) do
+    for key, action in pairs(self.keymaps) do
         local ord = action_order[action]
         table.insert(keymaps[ord], key)
     end
@@ -2379,65 +2330,63 @@ end
 
 ---@type table<SidebarAction, fun(sidebar: Sidebar)>
 local sidebar_actions = {
-    ["goto-symbol"] = sidebar_goto_symbol,
-    ["peek-symbol"] = sidebar_peek,
+    ["goto-symbol"] = Sidebar.goto_symbol,
+    ["peek-symbol"] = Sidebar.peek,
 
-    ["open-preview"] = sidebar_preview_open,
-    ["open-details-window"] = sidebar_toggle_show_details,
-    ["show-symbol-under-cursor"] = sidebar_show_symbol_under_cursor,
+    ["open-preview"] = Sidebar.preview_open,
+    ["open-details-window"] = Sidebar.toggle_show_details,
+    ["show-symbol-under-cursor"] = Sidebar.show_symbol_under_cursor,
 
-    ["goto-parent"] = sidebar_goto_parent,
-    ["prev-symbol-at-level"] = sidebar_prev_symbol_at_level,
-    ["next-symbol-at-level"] = sidebar_next_symbol_at_level,
+    ["goto-parent"] = Sidebar.goto_parent,
+    ["prev-symbol-at-level"] = Sidebar.prev_symbol_at_level,
+    ["next-symbol-at-level"] = Sidebar.next_symbol_at_level,
 
-    ["unfold"] = sidebar_unfold,
-    ["unfold-recursively"] = sidebar_unfold_recursively,
-    ["unfold-one-level"] = sidebar_unfold_one_level,
-    ["unfold-all"] = sidebar_unfold_all,
+    ["unfold"] = Sidebar.unfold,
+    ["unfold-recursively"] = Sidebar.unfold_recursively,
+    ["unfold-one-level"] = Sidebar.unfold_one_level,
+    ["unfold-all"] = Sidebar.unfold_all,
 
-    ["fold"] = sidebar_fold,
-    ["fold-recursively"] = sidebar_fold_recursively,
-    ["fold-one-level"] = sidebar_fold_one_level,
-    ["fold-all"] = sidebar_fold_all,
+    ["fold"] = Sidebar.fold,
+    ["fold-recursively"] = Sidebar.fold_recursively,
+    ["fold-one-level"] = Sidebar.fold_one_level,
+    ["fold-all"] = Sidebar.fold_all,
 
-    ["search"] = sidebar_search,
+    ["search"] = Sidebar.search,
 
-    ["toggle-fold"] = sidebar_toggle_fold,
-    ["toggle-inline-details"] = sidebar_toggle_details,
-    ["toggle-auto-details-window"] = sidebar_toggle_auto_details,
-    ["toggle-auto-preview"] = sidebar_toggle_auto_preview,
-    ["toggle-cursor-hiding"] = sidebar_toggle_cursor_hiding,
-    ["toggle-cursor-follow"] = sidebar_toggle_cursor_follow,
-    ["toggle-filters"] = sidebar_toggle_filters,
-    ["toggle-auto-peek"] = sidebar_toggle_auto_peek,
-    ["toggle-close-on-goto"] = sidebar_toggle_close_on_goto,
-    ["toggle-auto-resize"] = sidebar_toggle_auto_resize,
-    ["decrease-max-width"] = sidebar_decrease_max_width,
-    ["increase-max-width"] = sidebar_increase_max_width,
+    ["toggle-fold"] = Sidebar.toggle_fold,
+    ["toggle-inline-details"] = Sidebar.toggle_details,
+    ["toggle-auto-details-window"] = Sidebar.toggle_auto_details,
+    ["toggle-auto-preview"] = Sidebar.toggle_auto_preview,
+    ["toggle-cursor-hiding"] = Sidebar.toggle_cursor_hiding,
+    ["toggle-cursor-follow"] = Sidebar.toggle_cursor_follow,
+    ["toggle-filters"] = Sidebar.toggle_filters,
+    ["toggle-auto-peek"] = Sidebar.toggle_auto_peek,
+    ["toggle-close-on-goto"] = Sidebar.toggle_close_on_goto,
+    ["toggle-auto-resize"] = Sidebar.toggle_auto_resize,
+    ["decrease-max-width"] = Sidebar.decrease_max_width,
+    ["increase-max-width"] = Sidebar.increase_max_width,
 
-    ["help"] = sidebar_help,
-    ["close"] = sidebar_close,
+    ["help"] = Sidebar.help,
+    ["close"] = Sidebar.close,
 }
 
 utils.assert_keys_are_enum(sidebar_actions, cfg.SidebarAction, "sidebar_actions")
 
----@param sidebar Sidebar
-local function sidebar_on_cursor_move(sidebar)
-    sidebar.preview:on_cursor_move()
-    sidebar.details:on_cursor_move()
-    if sidebar.auto_peek then sidebar_peek(sidebar) end
+function Sidebar:on_cursor_move()
+    self.preview:on_cursor_move()
+    self.details:on_cursor_move()
+    if self.auto_peek then self:peek() end
 end
 
----@param sidebar Sidebar
-local function sidebar_on_scroll(sidebar)
+function Sidebar:on_scroll()
     -- this function is used only with "symbols" view
-    if sidebar.details.win ~= -1 then
-        sidebar.details:close()
-        sidebar.details:open()
+    if self.details.win ~= -1 then
+        self.details:close()
+        self.details:open()
     end
-    if sidebar.preview.win ~= -1 then
-        sidebar.preview:close()
-        sidebar.preview:open()
+    if self.preview.win ~= -1 then
+        self.preview:close()
+        self.preview:open()
     end
 end
 
@@ -2496,7 +2445,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             buffer = sidebar.buf,
-            callback = function() sidebar_on_cursor_move(sidebar) end,
+            callback = function() sidebar:on_cursor_move() end,
             nested = true,
         }
     )
@@ -2508,15 +2457,15 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
             callback = function()
                 if (
                     not sidebar.cursor_follow or
-                    not sidebar_visible(sidebar) or
+                    not sidebar:visible() or
                     sidebar.current_view ~= "symbols"
                 ) then return end
                 local win = vim.api.nvim_get_current_win()
                 if win ~= sidebar.source_win then return end
-                local symbols = sidebar_current_symbols(sidebar)
+                local symbols = sidebar:current_symbols()
                 local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
                 local symbol = symbol_at_pos(symbols.root, pos)
-                sidebar_set_cursor_at_symbol(sidebar, symbol, false)
+                sidebar:set_cursor_at_symbol(symbol, false)
             end
         }
     )
@@ -2526,7 +2475,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
         {
             group = global_autocmd_group,
             buffer = sidebar.buf,
-            callback = function() sidebar_on_scroll(sidebar) end,
+            callback = function() sidebar:on_scroll() end,
         }
     )
 
@@ -2550,7 +2499,7 @@ local function show_debug_in_current_window(sidebars)
 
     local lines = {}
     for _, sidebar in ipairs(sidebars) do
-        local new_lines = vim.split(sidebar_str(sidebar), "\n") vim.list_extend(lines, new_lines) end
+        local new_lines = vim.split(sidebar:to_string(), "\n") vim.list_extend(lines, new_lines) end
 
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     local win = vim.api.nvim_get_current_win()
@@ -2606,7 +2555,7 @@ local function setup_dev(gs, sidebars, config)
         end
 
         for _, sidebar in ipairs(sidebars) do
-            sidebar_destroy(sidebar)
+            sidebar:destroy()
         end
 
         reset_cursor(gs.cursor)
@@ -2657,7 +2606,7 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
     local function _sidebar_new()
         local sidebar, num = find_sidebar_for_reuse(sidebars)
         if sidebar == nil then
-            sidebar = sidebar_new_obj()
+            sidebar = Sidebar:new()
             table.insert(sidebars, sidebar)
             num = #sidebars
         end
@@ -2679,12 +2628,12 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             end
 
             local sidebar = find_sidebar_for_win(sidebars, win) or _sidebar_new()
-            if sidebar_visible(sidebar) then
+            if sidebar:visible() then
                 vim.api.nvim_set_current_win(sidebar.win)
-                sidebar_refresh_symbols(sidebar)
+                sidebar:refresh_symbols()
             else
-                sidebar_open(sidebar)
-                sidebar_refresh_symbols(sidebar)
+                sidebar:open()
+                sidebar:refresh_symbols()
                 if jump_to_sidebar then vim.api.nvim_set_current_win(sidebar.win) end
             end
         end,
@@ -2700,9 +2649,9 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             local jump_to_sidebar = not e.bang
             local win = vim.api.nvim_get_current_win()
             local sidebar = find_sidebar_for_win(sidebars, win) or _sidebar_new()
-            if not sidebar_visible(sidebar) then
-                sidebar_open(sidebar)
-                sidebar_refresh_symbols(sidebar)
+            if not sidebar:visible() then
+                sidebar:open()
+                sidebar:refresh_symbols()
                 if jump_to_sidebar then vim.api.nvim_set_current_win(sidebar.win) end
             end
         end,
@@ -2718,7 +2667,7 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             local win = vim.api.nvim_get_current_win()
             local sidebar = find_sidebar_for_win(sidebars, win)
             if sidebar ~= nil then
-                sidebar_close(sidebar)
+                sidebar:close()
             end
         end,
         { desc = "Close the Symbols sidebar" }
@@ -2730,11 +2679,11 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             local jump_to_sidebar = not e.bang
             local win = vim.api.nvim_get_current_win()
             local sidebar = find_sidebar_for_win(sidebars, win) or _sidebar_new()
-            if sidebar_visible(sidebar) then
-                sidebar_close(sidebar)
+            if sidebar:visible() then
+                sidebar:close()
             else
-                sidebar_open(sidebar)
-                sidebar_refresh_symbols(sidebar)
+                sidebar:open()
+                sidebar:refresh_symbols()
                 if jump_to_sidebar then vim.api.nvim_set_current_win(sidebar.win) end
             end
         end,
@@ -2743,21 +2692,6 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
             desc = "Open or close the Symbols sidebar"
         }
     )
-
-    -- create_user_command(
-    --     "SymbolsCurrent",
-    --     function()
-    --         local win = vim.api.nvim_get_current_win()
-    --         local sidebar = find_sidebar_for_win(sidebars, win)
-    --         if sidebar ~= nil then
-    --             local symbols = sidebar_current_symbols(sidebar)
-    --             local pos = Pos_from_point(vim.api.nvim_win_get_cursor(sidebar.source_win))
-    --             local symbol = symbol_at_pos(symbols.root, pos)
-    --             sidebar_set_cursor_at_symbol(sidebar, symbol, true)
-    --         end
-    --     end,
-    --     {}
-    -- )
 
     create_user_command(
         "SymbolsDebugToggle",
@@ -2821,10 +2755,10 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
                 local tab_wins = #vim.api.nvim_tabpage_list_wins(0)
                 for _, sidebar in ipairs(sidebars) do
                     if tab_wins > 2 and sidebar.source_win == win then
-                        sidebar_destroy(sidebar)
+                        sidebar:destroy()
                     end
                     if sidebar.win == win then
-                        sidebar_close(sidebar)
+                        sidebar:close()
                     end
                 end
             end
@@ -2849,8 +2783,8 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
             callback = function(t)
                 local source_buf = t.buf
                 for _, sidebar in ipairs(sidebars) do
-                    if sidebar_source_win_buf(sidebar) == source_buf then
-                        sidebar_refresh_symbols(sidebar)
+                    if sidebar:source_win_buf() == source_buf then
+                        sidebar:refresh_symbols()
                     end
                 end
             end
@@ -2866,7 +2800,7 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
                 and sidebar.buf ~= buf
                 and sidebar.search_view.buf ~= buf
             ) then
-                sidebar_win_restore(sidebar)
+                sidebar:win_restore()
                 return
             end
         end
@@ -2878,7 +2812,7 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
         for _, sidebar in ipairs(sidebars) do
             if sidebar.buf == buf or sidebar.search_view.buf == buf then
                 vim.cmd("q")
-                sidebar_destroy(sidebar)
+                sidebar:destroy()
             end
         end
     end
