@@ -132,7 +132,6 @@ function Preview:open()
     local source_buf = self.sidebar:source_win_buf()
     local symbol = self.sidebar:current_symbol()
     local range = symbol.range
-    local selection_range = symbol.selectionRange
     local cursor = vim.api.nvim_win_get_cursor(self.sidebar.win)
     cursor[1] = cursor[1] - vim.fn.line("w0", self.sidebar.win) + 1
 
@@ -272,7 +271,6 @@ function DetailsWin:open()
         table.insert(text, "   level: " .. tostring(symbol.level))
         table.insert(text, "   parent: " .. symbol.parent.name)
         table.insert(text, "   range: " .. range_string(symbol.range))
-        table.insert(text, "   selectionRange: " .. range_string(symbol.selectionRange))
         table.insert(text, "   folded: " .. tostring(symbol_state.folded))
         table.insert(text, "   visible: " .. tostring(symbol_state.visible))
         table.insert(text, "")
@@ -1096,7 +1094,7 @@ function SearchView:jump_to_current_symbol()
     local symbol = self.flat_symbols[search_symbol.i]
     vim.api.nvim_win_set_cursor(
         self.sidebar.source_win,
-        { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
+        { symbol.range.start.line + 1, symbol.range.start.character }
     )
     vim.api.nvim_set_current_win(self.sidebar.source_win)
     vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
@@ -1938,7 +1936,7 @@ function Sidebar:_goto_symbol()
     vim.api.nvim_set_current_win(self.source_win)
     vim.api.nvim_win_set_cursor(
         self.source_win,
-        { symbol.selectionRange.start.line + 1, symbol.selectionRange.start.character }
+        { symbol.range.start.line + 1, symbol.range.start.character }
     )
     vim.fn.win_execute(self.source_win, "normal! zz")
     flash_highlight_under_cursor(self.source_win, 400, 1)
