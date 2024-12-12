@@ -726,7 +726,14 @@ end
 local function activate_cursorline(cursor)
     if not cursor.hidden then
         local cur = vim.o.guicursor:match("n.-:(.-)[-,]")
-        vim.opt.guicursor:append("n:" .. cur .. "-Cursorline")
+        -- There is at least one report of cur being equal nil.
+        -- Until we figure out why that happens, let's just continue in that case.
+        if cur == nil then
+            local msg = string.format("Unexpected guicursor value: '%s'", vim.o.guicursor)
+            log.warn(msg)
+        else
+            vim.opt.guicursor:append("n:" .. cur .. "-Cursorline")
+        end
         cursor.hidden = true
     end
 end

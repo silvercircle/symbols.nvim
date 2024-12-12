@@ -61,7 +61,7 @@ function M.create_change_log_level_user_command(name, desc, create_user_command)
             if new_log_level == nil then
                 M.error("Invalid log level: " .. arg)
             else
-                LOG_LEVEL = new_log_level
+                M.LOG_LEVEL = new_log_level
             end
         end,
         {
