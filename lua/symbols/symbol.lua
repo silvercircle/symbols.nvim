@@ -22,7 +22,6 @@ end
 ---@field parent Symbol | nil
 ---@field children Symbol[]
 ---@field range Range
----@field selectionRange Range
 
 ---@return Symbol
 function M.Symbol_root()
@@ -34,10 +33,6 @@ function M.Symbol_root()
         parent = nil,
         children = {},
         range = {
-            start = { line = 0, character = 0 },
-            ["end"] = { line = -1, character = -1 }
-        },
-        selectionRange = {
             start = { line = 0, character = 0 },
             ["end"] = { line = -1, character = -1 }
         },

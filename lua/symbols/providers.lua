@@ -60,6 +60,7 @@ local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
             lsp_symbol.children = lsp_symbol.children or {}
             lsp_symbol.tags = nil
             lsp_symbol.deprecated = nil
+            lsp_symbol.selectionRange = nil
         end
         for _, child in ipairs(lsp_symbol.children) do
             rec_tidy_document_symbol(child, lsp_symbol, level + 1)
@@ -75,7 +76,6 @@ local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
             child.parent = lsp_symbol
             child.children = {}
             child.range = vim.deepcopy(child.location.range)
-            child.selectionRange = vim.deepcopy(child.location.range)
             child.tags = nil
             child.deprecated = nil
             child.location = nil
@@ -252,7 +252,6 @@ local function vimdoc_get_symbols(parser, buf)
                 parent = current,
                 children = {},
                 range = range,
-                selectionRange = range,
             }
             table.insert(current.children, new)
             current = new
@@ -262,7 +261,6 @@ local function vimdoc_get_symbols(parser, buf)
     local function fix_range_ends(node, range_end)
         if node.kind == "Tag" then return end
         node.range["end"].line = range_end
-        node.selectionRange["end"].line = range_end
         for i, child in ipairs(node.children) do
             local new_range_end = range_end
             if node.children[i+1] ~= nil then
@@ -318,7 +316,6 @@ local function markdown_get_symbols(parser, _)
             parent = current,
             children = {},
             range = section_range,
-            selectionRange = section_range,
         }
         table.insert(current.children, new)
         current = new
@@ -387,7 +384,6 @@ local function json_get_symbols(parser, buf)
                     parent = node,
                     children = {},
                     range = symbol_range_for_ts_node(ts_child),
-                    selectionRange = symbol_range_for_ts_node(ts_child),
                 }
                 table.insert(node.children, new_symbol)
                 if kind == "Array" then
@@ -415,7 +411,6 @@ local function json_get_symbols(parser, buf)
                     parent = node,
                     children = {},
                     range = symbol_range_for_ts_node(ts_child),
-                    selectionRange = symbol_range_for_ts_node(ts_child),
                 }
                 table.insert(node.children, new_symbol)
                 if kind == "Array" then
@@ -476,7 +471,6 @@ local function org_get_symbols(parser, buf)
             parent = current,
             children = {},
             range = section_range,
-            selectionRange = section_range,
         }
         table.insert(current.children, new)
         current = new
