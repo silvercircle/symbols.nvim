@@ -175,7 +175,7 @@ function Preview:open()
     end
     vim.api.nvim_win_set_cursor(
         self.win,
-        { selection_range.start.line+1, selection_range.start.character }
+        { range.start.line+1, range.start.character }
     )
     vim.fn.win_execute(self.win, "normal! zt")
     vim.api.nvim_set_option_value("cursorline", true, { win = self.win })
