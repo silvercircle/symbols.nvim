@@ -59,7 +59,7 @@ Virtually any LSP server should work with the sidebar.
 
 Languages supported through treesitter (Treesitter parser name in brackets): -
 Markdown (markdown) - Vimdoc (vimdoc) - Org (org) - JSON (json) - JSON Lines
-(json)
+(json) - Makefile (make)
 
 When a language is supported by both sources, the LSP servers take precedence
 over Treesitter.
