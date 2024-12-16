@@ -74,6 +74,7 @@ Languages supported through treesitter (Treesitter parser name in brackets):
 - Org (org)
 - JSON (json)
 - JSON Lines (json)
+- Makefile (make)
 
 When a language is supported by both sources, the LSP servers take precedence
 over Treesitter.

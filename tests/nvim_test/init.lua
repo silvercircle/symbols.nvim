@@ -3,7 +3,7 @@ require("symbols").setup()
 
 vim.cmd("set runtimepath+=deps/nvim-treesitter")
 require("nvim-treesitter.configs").setup({
-    ensure_installed = { "markdown", "org", "vimdoc", "json" },
+    ensure_installed = { "markdown", "org", "vimdoc", "json", "make" },
     auto_install = true,
 })
 

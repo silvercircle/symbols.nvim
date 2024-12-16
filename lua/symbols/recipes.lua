@@ -285,6 +285,9 @@ M.AsciiSymbols = {
                     H9 = "",
                     H10 = "",
                 },
+                make = {
+                    Target = "",
+                },
             }
         }
     }
@@ -370,6 +373,9 @@ M.FancySymbols = {
                     H9 = "",
                     H10 = "",
                 },
+                make = {
+                    Target = "",
+                }
             }
         },
     }

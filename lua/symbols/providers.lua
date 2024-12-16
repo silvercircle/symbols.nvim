@@ -479,6 +479,40 @@ local function org_get_symbols(parser, buf)
     return true, root
 end
 
+---@type TSProviderGetSymbols
+local function make_get_symbols(parser, buf)
+    local SPECIAL_TARGETS = {
+        ".DEFAULT", ".DELETE_ON_ERROR", ".EXPORT_ALL_VARIABLES", ".IGNORE",
+        ".INTERMEDIATE", ".LOW_RESOLUTION_TIME", ".NOTINTERMEDIATE", ".NOTPARALLEL",
+        ".ONESHELL", ".PHONY", ".POSIX", ".PRECIOUS",
+        ".SECONDARY", ".SECONDEXPANSION", ".SILENT", ".SUFFIXES",
+    }
+    local rootNode = parser:parse()[1]:root()
+    local query = vim.treesitter.query.parse("make", "(targets) @t")
+    local root = Symbol_root()
+    for _, node, _, _ in query:iter_captures(rootNode, 0) do
+        local name = get_ts_node_text(node, buf)
+        if not vim.tbl_contains(SPECIAL_TARGETS, name) then
+            local start_row, start_col, end_row, end_col = node:range()
+            local range = {
+                ["start"] = { line = start_row, character = start_col },
+                ["end"] = { line = end_row - 1, character = end_col },
+            }
+            ---@type Symbol
+            local new = {
+                kind = "Target",
+                name = name,
+                detail = "",
+                level = 1,
+                parent = root,
+                children = {},
+                range = range,
+            }
+            table.insert(root.children, new)
+        end
+    end
+    return true, root
+end
 
 ---@class TSProvider: Provider
 ---@field name string
@@ -504,6 +538,7 @@ function TSProvider:supports(buf)
         json = "json",
         jsonl = "json",
         org = "org",
+        make = "make",
     }
     local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
     local parser_name = ft_to_parser_name[ft]
@@ -525,6 +560,7 @@ function TSProvider:get_symbols(buf)
         json = json_get_symbols,
         jsonl = json_get_symbols,
         org = org_get_symbols,
+        make = make_get_symbols,
     }
     local get_symbols = get_symbols_funs[self.ft]
     assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(self.ft))

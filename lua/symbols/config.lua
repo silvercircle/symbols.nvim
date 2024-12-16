@@ -307,6 +307,9 @@ M.default = {
                     H9 = "@markup.heading.6.markdown",
                     H10 = "@markup.heading.6.markdown",
                 },
+                make = {
+                    Target = "",
+                },
                 default = {},
             }
         },

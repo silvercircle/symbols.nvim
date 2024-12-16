@@ -18,6 +18,7 @@ T["vimdoc"] = function() test_file("tests/examples/mini-test.txt") end
 T["org"] = function() test_file("tests/examples/example.org") end
 T["json"] = function() test_file("tests/examples/morty.json") end
 T["json-lines"] = function() test_file("tests/examples/example.jsonl") end
+T["makefile"] = function() test_file("tests/examples/Makefile") end
 
 T["lua"] = function() test_file("tests/examples/nvim_lsp_client.lua", 2000) end
 -- I don't know why this doesn't work :/ testing manually seems to work
