@@ -7,8 +7,13 @@ M.default = {
     aaa = "\"'\n",
     bbb = "left",
     hide_cursor = true,
-    cursor_follow = true,
     x = "abc",
+    sidebar = {
+        cursor_follow = true,
+        test = {
+            cursor_follow2 = true,
+        }
+    }
 }
 
 [//]: # (VALIDATE_MARK_END DEFAULT_CONFIG)
