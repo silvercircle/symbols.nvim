@@ -3,22 +3,34 @@
 ---     [x] type checking
 ---     [x] default value
 ---     [x] code gen
---- [ ] validation
+--- [x] validation
+--- [ ] docs (V.doc)
+--- [ ] docs with fixed indent
+--- [ ] doc work as string.format
+--- [ ] marking fields as optional
+--- [ ] everything optional mode
+--- [ ] validation - list unrecognized fields
+--- [ ] validate default values (toggable?)
+--- [ ] implement aliases - V.alias? allows to define an alias and use it in multiple places
 --- [ ] more types
+---     [x] enum
+---     [x] integer
+---     [x] integer range
+---     [x] string len
+---     [x] regex
 ---     [ ] functions
----     [ ] list
----     [ ] enum
----     [ ] integer
----     [ ] regex
----     [ ] string len
 ---     [ ] table
 ---     [ ] list
 ---     [ ] union
+--- [ ] fuzzy match
+---     [ ] enum fail
+---     [ ] unrecognized fields
 --- [ ] smart extend
 --- [ ] formatting
 ---     [ ] indent size
 ---     [ ] quote style?
 ---     [ ] quote keys always
+--- [ ] partial config types
 
 local V = {}
 
@@ -90,15 +102,41 @@ end
 
 ---@alias V.Validator fun(x: any): boolean, string
 
----@type V.Validator
-function V.string_v(x)
-    if type(x) == "string" then
-        return true, ""
+---@class V.StringValidatorOpts
+---@field min_len integer?
+---@field max_len integer?
+---@field pattern string?
+
+---@param x string
+---@param opts V.StringValidatorOpts
+---@return boolean, string
+local function _string_v(x, opts)
+    if opts.min_len ~= nil and #x < opts.min_len then
+        return false, "Expected a string of length at least " .. tostring(opts.min_len) .. "."
     end
-    return false, "Expected a string."
+    if opts.max_len ~= nil and #x > opts.max_len then
+        return false, "Expected a string of length at most " .. tostring(opts.max_len) .. "."
+    end
+    if opts.pattern ~= nil and x:match(opts.pattern) == nil then
+        return false, "Expected a string to match regex: " .. tostring(opts.pattern)
+    end
+    return true, ""
+end
+
+---@param opts V.StringValidatorOpts
+---@return V.Validator
+function V.string_v(opts)
+    ---@type V.Validator
+    return function(x)
+        if type(x) ~= "string" then
+            return false, "Expected a string."
+        end
+        return _string_v(x, opts)
+    end
 end
 V.str_v = V.string_v
 
+---@type V.Validator
 function V.boolean_v(x)
     if type(x) == "boolean" then
         return true, ""
@@ -107,11 +145,79 @@ function V.boolean_v(x)
 end
 V.bool_v = V.boolean_v
 
+---@class V.NumberValidatorOpts
+---@field ge number?
+---@field gt number?
+---@field le number?
+---@field lt number?
+
+---@param x number
+---@param opts V.NumberValidatorOpts
+---@return boolean, string
+local function _number_range_v(x, opts)
+    if opts.ge ~= nil and not (opts.ge <= x) then
+        return false, "Expected a value greater or equal to " .. tostring(opts.ge) .. "."
+    end
+    if opts.gt ~= nil and not (opts.gt < x) then
+        return false, "Expected a value greater than " .. tostring(opts.gt) .. "."
+    end
+    if opts.le ~= nil and not (opts.le >= x) then
+        return false, "Expected a value less or equal to " .. tostring(opts.le) .. "."
+    end
+    if opts.lt ~= nil and not (opts.lt > x) then
+        return false, "Expected a value less than " .. tostring(opts.lt) .. "."
+    end
+    return true, ""
+end
+
+---@param opts V.NumberValidatorOpts
+---@return V.Validator
+function V.number_v(opts)
+    ---@type V.Validator
+    return function(x)
+        if type(x) ~= "number" then
+            return false, "Expected a number."
+        end
+        return _number_range_v(x, opts)
+    end
+end
+
+---@param opts V.NumberValidatorOpts
+---@return V.Validator
+function V.integer_v(opts)
+    ---@type V.Validator
+    return function(x)
+        if type(x) ~= "number" then
+            return false, "Expected a number."
+        end
+        if math.floor(x) ~= x then
+            return false, "Expected an integer."
+        end
+        return _number_range_v(x, opts)
+    end
+end
+
+---@type V.Validator
 function V.table_v(x)
     if type(x) == "table" then
         return true, ""
     end
     return false, "Expected a table."
+end
+
+---@param enum table<string, string | number>
+---@param enum_name string
+---@return V.Validator
+function V.enum_v(enum, enum_name)
+    local values = vim.tbl_values(enum)
+
+    ---@type V.Validator
+    return function(x)
+        if vim.list_contains(values, x) then
+            return true, ""
+        end
+        return false, "Expected an enum: " .. enum_name .. "."
+    end
 end
 
 ---@class V.Field
@@ -129,35 +235,73 @@ function V.Field:init(obj)
     return setmetatable(obj, self)
 end
 
+---@param name string
+---@param default string
+---@param opts V.StringValidatorOpts?
 ---@return V.Field
-function V.String(obj)
-    obj.type = obj.type or "string"
-    obj.validators = obj.validators or {}
-    table.insert(obj.validators, 1, V.string_v)
-    return V.Field(obj)
-end
-V.Str = V.String
-
----@return V.Field
-function V.string(name, default)
-    return V.String { name = name, default = default }
+function V.string(name, default, opts)
+    return V.Field {
+        name = name,
+        default = default,
+        type = "string",
+        validators = { V.string_v(opts or {}) }
+    }
 end
 V.str = V.string
 
----@return V.Field
-function V.Boolean(obj)
-    obj.type = obj.type or "boolean"
-    obj.validators = obj.validators or {}
-    table.insert(obj.validators, 1, V.bool_v)
-    return V.Field(obj)
-end
-V.Bool = V.Boolean
-
+---@param name string
+---@param default boolean
 ---@return V.Field
 function V.boolean(name, default)
-    return V.Boolean { name = name, default = default }
+    return V.Field {
+        name = name,
+        default = default,
+        type = "boolean",
+        validators = { V.bool_v }
+    }
 end
 V.bool = V.boolean
+
+---@param name string
+---@param default number
+---@param opts V.NumberValidatorOpts?
+---@return V.Field
+function V.number(name, default, opts)
+    return V.Field {
+        name = name,
+        default = default,
+        type = "number",
+        validators = { V.number_v(opts or {}) }
+    }
+end
+V.num = V.number
+
+---@param name string
+---@param default integer
+---@param opts V.NumberValidatorOpts?
+---@return V.Field
+function V.integer(name, default, opts)
+    return V.Field {
+        name = name,
+        default = default,
+        type = "integer",
+        validators = { V.integer_v(opts or {}) }
+    }
+end
+V.int = V.integer
+
+---@param name string
+---@param default any
+---@param enum table<string, string | number>
+---@param enum_name string
+function V.enum(name, default, enum, enum_name)
+    return V.Field {
+        name = name,
+        default = default,
+        type = enum_name,
+        validators = { V.enum_v(enum, enum_name) }
+    }
+end
 
 ---@class V.Class
 ---@field name string

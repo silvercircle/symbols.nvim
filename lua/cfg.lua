@@ -9,6 +9,9 @@ local M = {}
 ---@field bbb string
 ---@field hide_cursor boolean
 ---@field x string
+---@field e SidebarAction
+---@field n number
+---@field i integer
 
 ---@class SidebarV2
 ---@field cursor_follow boolean
@@ -18,13 +21,22 @@ local M = {}
 
 -- VALIDATE_MARK_END TYPES --
 
+SidebarAction = {
+    GotoSymbol = "goto-symbol",
+    PeekSymbol = "peek-symbol",
+    OpenPreview = "open-preview",
+}
+
 local model  = V.Class {
     name = "M.default",
     type = "ConfigV2",
-    V.Field { name="aaa", type="string", default="\"'\n" },
-    V.String { name="bbb", default="left" },
-    V.Bool { name="hide_cursor", default=true },
+    V.str("aaa", "abc", { min_len = 3, max_len = 12 }),
+    V.str("bbb", "left", { pattern = "left" }),
+    V.bool("hide_cursor", true),
     V.str("x", "abc"),
+    V.enum("e", SidebarAction.GotoSymbol, SidebarAction, "SidebarAction"),
+    V.num("n", 123, { ge = -1, le = 1 }),
+    V.int("i", 123, { ge = 0, lt = 10} ),
     V.Class {
         name = "sidebar", type = "SidebarV2",
         V.bool("cursor_follow", true),
@@ -39,10 +51,13 @@ local model  = V.Class {
 
 ---@type ConfigV2
 M.default = {
-    aaa = "\"'\n",
+    aaa = "abc",
     bbb = "left",
     hide_cursor = true,
     x = "abc",
+    e = "goto-symbol",
+    n = 123,
+    i = 123,
     sidebar = {
         cursor_follow = true,
         test = {
@@ -59,12 +74,14 @@ function M.build()
     V.replace_between_marks_in_file(V.this_file(), V.get_mark("lua", "TYPES"), model:type_annotations())
 end
 
-
 local config = {
     aaa = "\"'\n",
-    bbb = "left",
+    bbb = "leftleft",
     hide_cursor = "true",
     x = false,
+    e = "goto-symbo",
+    n = 0.5,
+    i = 8,
     sidebar = {
         cursor_follow = "Absda\n\nalfdkjaslkfjdflkasjflkasjfljaslfjasdjfd aslfkjasdljflasjdf",
         test = {
