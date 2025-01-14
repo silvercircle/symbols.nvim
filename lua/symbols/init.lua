@@ -1900,7 +1900,8 @@ function Sidebar:set_cursor_at_symbol(target, unfold)
 
     if lines == 0 then lines = 1 end
     if unfold then self:refresh_view() end
-    vim.api.nvim_win_set_cursor(self.win, { lines, 0 })
+    local ok, err = pcall(vim.api.nvim_win_set_cursor, self.win, { lines, 0 })
+    if not ok then log.warn(err) end
 end
 
 ---@param win integer
@@ -1941,12 +1942,18 @@ end
 function Sidebar:_goto_symbol()
     local symbol = self:current_symbol()
     vim.api.nvim_set_current_win(self.source_win)
-    vim.api.nvim_win_set_cursor(
+    -- If we fail to jump to cursor then the file is no longer synchronized with the sidebar.
+    local ok, err = pcall(
+        vim.api.nvim_win_set_cursor,
         self.source_win,
         { symbol.range.start.line + 1, symbol.range.start.character }
     )
-    vim.fn.win_execute(self.source_win, "normal! zz")
-    flash_highlight_under_cursor(self.source_win, 400, 1)
+    if ok then
+        vim.fn.win_execute(self.source_win, "normal! zz")
+        flash_highlight_under_cursor(self.source_win, 400, 1)
+    else
+        log.warn(err)
+    end
 end
 
 function Sidebar:goto_symbol()
