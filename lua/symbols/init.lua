@@ -286,7 +286,7 @@ function DetailsWin:open()
     local display_kind = cfg.kind_for_symbol(kinds_cfg, symbol)
     if display_kind ~= "" then
         local highlight = nvim.Highlight:new({
-            group = highlights_cfg[symbol.kind],
+            group = highlights_cfg[symbol.kind] or "",
             line = #text + 1,
             col_start = 1,
             col_end = 1 + #display_kind,
@@ -1054,7 +1054,7 @@ function SearchView:_search_symbols_highlights(search_symbols, flat_symbols)
         local symbol = flat_symbols[search_symbol.i]
         local kind_display = cfg.kind_for_symbol(kinds_display_config, symbol, kinds_default_config)
         local highlight = nvim.Highlight:new({
-            group = highlights_config[symbol.kind],
+            group = highlights_config[symbol.kind] or "",
             line = line_nr,
             col_start = 1,
             col_end = #kind_display + 1,
@@ -1627,7 +1627,7 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
                 local highlight = nvim.Highlight:new({
-                    group = highlights_config[sym.kind],
+                    group = highlights_config[sym.kind] or "",
                     line = line_nr,
                     col_start = #indent + #prefix,
                     col_end = #indent + #prefix + #kind_display

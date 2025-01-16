@@ -366,7 +366,12 @@ function M.kind_for_symbol(kinds, symbol, default_config)
         kind = kinds[symbol.kind]
     end
     if kind ~= nil then return kind end
-    return (default_config ~= nil and default_config[symbol.kind]) or symbol.kind
+    if default_config ~= nil and default_config[symbol.kind] ~= nil then
+        return default_config[symbol.kind]
+    end
+    if symbol.kind ~= nil then return symbol.kind end
+    -- We shouldn't ever get here, but somehow we do: https://github.com/oskarrrrrrr/symbols.nvim/issues/11
+    return ""
 end
 
 return M
