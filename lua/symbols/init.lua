@@ -1628,13 +1628,15 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 else
                     prefix = chars.unfolded .. " "
                 end
-                local highlight = nvim.Highlight:new({
-                  group = chars.hl,
-                  line = line_nr,
-                  col_start = #indent,
-                  col_end = #indent + 1
-                })
-                table.insert(highlights, highlight)
+                if show_guide_lines then
+                    local highlight = nvim.Highlight:new({
+                      group = chars.hl,
+                      line = line_nr,
+                      col_start = #indent,
+                      col_end = #indent + 1
+                    })
+                    table.insert(highlights, highlight)
+                end
                 local kind_display = cfg.kind_for_symbol(kinds_display_config, sym, kinds_default_config)
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
@@ -1651,13 +1653,15 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 else
                     new_indent = indent .. "  "
                 end
-                local hl = nvim.Highlight:new({
-                  group = chars.hl,
-                  line = line_nr,
-                  col_start = 1,
-                  col_end = #indent + 1
-                })
-                table.insert(highlights, hl)
+                if show_guide_lines then
+                    local hl = nvim.Highlight:new({
+                      group = chars.hl,
+                      line = line_nr,
+                      col_start = 1,
+                      col_end = #indent + 1
+                    })
+                    table.insert(highlights, hl)
+                end
                 line_nr = get_buf_lines_and_highlights(sym, new_indent, line_nr + 1)
             end
         end
