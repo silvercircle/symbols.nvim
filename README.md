@@ -224,6 +224,9 @@ Default config below.
         -- When enabled every symbol will be automatically peeked after cursor
         -- movement.
         auto_peek = false,
+        -- Whether the sidebar should unfold the target buffer on goto
+        -- This simply sends a zv after the zz
+        unfold_on_goto = false,
         -- Whether to close the sidebar on goto symbol.
         close_on_goto = false,
         -- Whether the sidebar should wrap text.
@@ -236,6 +239,8 @@ Default config below.
             guide_vert = "│",
             guide_middle_item = "├",
             guide_last_item = "└",
+            -- use this highlight group for the guide lines
+            hl = "Comment"
         },
         -- Config for the preview window.
         preview = {
