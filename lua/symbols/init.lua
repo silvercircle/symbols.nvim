@@ -2898,7 +2898,7 @@ end
 M.api = {
   action = function(act)
     local sidebar = apisupport_getsidebar()
-    if sidebar ~= nil then
+    if sidebar ~= nil and sidebar_actions[act] ~= nil then
       sidebar_actions[act](sidebar)
     end
   end,
