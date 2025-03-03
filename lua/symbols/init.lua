@@ -1,3 +1,4 @@
+-- vim: ts=4:sw=4:set et
 local cfg = require("symbols.config")
 local utils = require("symbols.utils")
 local log = require("symbols.log")
@@ -2890,24 +2891,25 @@ function M.setup(...)
 end
 
 local apisupport_getsidebar = function()
-  local win = vim.api.nvim_get_current_win()
-  local sidebar = find_sidebar_for_win(sidebars, win)
-  return sidebar
+    local win = vim.api.nvim_get_current_win()
+    local sidebar = find_sidebar_for_win(sidebars, win)
+    return sidebar
 end
 
 M.api = {
-  action = function(act)
-    local sidebar = apisupport_getsidebar()
-    if sidebar ~= nil and sidebar_actions[act] ~= nil then
-      sidebar_actions[act](sidebar)
+    action = function(act)
+        vim.validate({ act = { act, "string" } })
+        local sidebar = apisupport_getsidebar()
+        if sidebar ~= nil and sidebar_actions[act] ~= nil then
+            sidebar_actions[act](sidebar)
+        end
+    end,
+    refresh_symbols = function()
+        local sidebar = apisupport_getsidebar()
+        if sidebar ~= nil then
+            sidebar:refresh_symbols()
+        end
     end
-  end,
-  refresh_symbols = function()
-    local sidebar = apisupport_getsidebar()
-    if sidebar ~= nil then
-      sidebar:refresh_symbols()
-    end
-  end
 }
 
 return M
