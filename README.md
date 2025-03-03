@@ -224,6 +224,9 @@ Default config below.
         -- When enabled every symbol will be automatically peeked after cursor
         -- movement.
         auto_peek = false,
+        -- Whether the sidebar should unfold the target buffer on goto
+        -- This simply sends a zv after the zz
+        unfold_on_goto = false,
         -- Whether to close the sidebar on goto symbol.
         close_on_goto = false,
         -- Whether the sidebar should wrap text.
@@ -236,6 +239,8 @@ Default config below.
             guide_vert = "│",
             guide_middle_item = "├",
             guide_last_item = "└",
+            -- use this highlight group for the guide lines
+            hl = "Comment"
         },
         -- Config for the preview window.
         preview = {
@@ -380,6 +385,39 @@ Default config below.
         keymaps = {},
     }
 }
+```
+
+# API
+
+There is now a (currently very simple) API available to control the Sidebar from LUA
+
+```lua
+  ---perform any action defined in SidebarAction
+  ---@param act SidebarAction[]
+  action = function(act)
+    local sidebar = apisupport_getsidebar()
+    if sidebar ~= nil and sidebar_actions[act] ~= nil then
+      sidebar_actions[act](sidebar)
+    end
+  end,
+  ---manually refresh the symbols in the current sidebar
+  refresh_symbols = function()
+    local sidebar = apisupport_getsidebar()
+    if sidebar ~= nil then
+      sidebar:refresh_symbols()
+    end
+  end
+```
+The available actions can be obtained by calling
+
+```lua
+=require("symbols.config").SidebarAction
+```
+
+For example, to unfold the entire tree you would call:
+
+```lua
+require("symbols").api.action("unfold-all")
 ```
 
 # Alternatives

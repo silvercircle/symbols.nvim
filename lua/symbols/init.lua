@@ -1,3 +1,4 @@
+-- vim: ts=4:sw=4:set et
 local cfg = require("symbols.config")
 local utils = require("symbols.utils")
 local log = require("symbols.log")
@@ -109,7 +110,7 @@ function Preview:goto_symbol()
     local cursor = vim.api.nvim_win_get_cursor(self.win)
     vim.api.nvim_win_set_cursor(self.sidebar.source_win, cursor)
     vim.api.nvim_set_current_win(self.sidebar.source_win)
-    vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
+    vim.fn.win_execute(self.sidebar.source_win, self.sidebar.unfold_on_goto and "normal! zz zv" or "normal! zz")
     if self.sidebar.close_on_goto then
         self.sidebar:close()
     end
@@ -1104,7 +1105,7 @@ function SearchView:jump_to_current_symbol()
         { symbol.range.start.line + 1, symbol.range.start.character }
     )
     vim.api.nvim_set_current_win(self.sidebar.source_win)
-    vim.fn.win_execute(self.sidebar.source_win, "normal! zz")
+    vim.fn.win_execute(self.sidebar.source_win, self.sidebar.unfold_on_goto and "normal! zz zv" or "normal! zz")
     flash_highlight_under_cursor(self.sidebar.source_win, 400, 1)
 end
 
@@ -1183,6 +1184,7 @@ end
 ---@field show_inline_details boolean
 ---@field show_guide_lines boolean
 ---@field wrap boolean
+---@field unfold_on_goto boolean
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field keymaps KeymapsConfig
@@ -1221,6 +1223,7 @@ function Sidebar:new()
         show_inline_details = false,
         show_guide_lines = false,
         wrap = false,
+        unfold_on_goto = config.unfold_on_goto,
         auto_resize = vim.deepcopy(config.auto_resize, true),
         fixed_width = config.fixed_width,
         keymaps = config.keymaps,
@@ -1471,6 +1474,9 @@ function Sidebar:open()
             signcolumn = "no",
             cursorline = true,
             winfixwidth = true,
+            foldcolumn = "0",
+            statuscolumn = "",
+            listchars = "eol: ",
             wrap = self.wrap,
         }
     )
@@ -1623,6 +1629,15 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 else
                     prefix = chars.unfolded .. " "
                 end
+                if show_guide_lines then
+                    local highlight = nvim.Highlight:new({
+                      group = chars.hl,
+                      line = line_nr,
+                      col_start = #indent,
+                      col_end = #indent + 1
+                    })
+                    table.insert(highlights, highlight)
+                end
                 local kind_display = cfg.kind_for_symbol(kinds_display_config, sym, kinds_default_config)
                 local line = indent .. prefix .. (kind_display ~= "" and (kind_display .. " ") or "") .. sym.name
                 table.insert(buf_lines, line)
@@ -1638,6 +1653,15 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                     new_indent = indent .. chars.guide_vert .. " "
                 else
                     new_indent = indent .. "  "
+                end
+                if show_guide_lines then
+                    local hl = nvim.Highlight:new({
+                      group = chars.hl,
+                      line = line_nr,
+                      col_start = 1,
+                      col_end = #indent + 1
+                    })
+                    table.insert(highlights, hl)
                 end
                 line_nr = get_buf_lines_and_highlights(sym, new_indent, line_nr + 1)
             end
@@ -1949,7 +1973,7 @@ function Sidebar:_goto_symbol()
         { symbol.range.start.line + 1, symbol.range.start.character }
     )
     if ok then
-        vim.fn.win_execute(self.source_win, "normal! zz")
+        vim.fn.win_execute(self.source_win, self.unfold_on_goto and "normal! zz zv" or "normal! zz")
         flash_highlight_under_cursor(self.source_win, 400, 1)
     else
         log.warn(err)
@@ -2438,6 +2462,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.cursor_follow = config.cursor_follow
     sidebar.auto_peek = config.auto_peek
     sidebar.close_on_goto = config.close_on_goto
+    sidebar.unfold_on_goto = config.unfold_on_goto
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     nvim.buf_set_modifiable(sidebar.buf, false)
@@ -2841,6 +2866,9 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
     )
 end
 
+---@type Sidebar[]
+local sidebars = {}
+
 function M.setup(...)
     local config = cfg.prepare_config(...)
 
@@ -2857,12 +2885,31 @@ function M.setup(...)
     }
     local symbols_retriever = SymbolsRetriever_new(providers, config.providers)
 
-    ---@type Sidebar[]
-    local sidebars = {}
-
     if config.dev.enabled then setup_dev(gs, sidebars, config) end
     setup_user_commands(gs, sidebars, symbols_retriever, config)
     setup_autocommands(gs, sidebars, symbols_retriever)
 end
+
+local apisupport_getsidebar = function()
+    local win = vim.api.nvim_get_current_win()
+    local sidebar = find_sidebar_for_win(sidebars, win)
+    return sidebar
+end
+
+M.api = {
+    action = function(act)
+        vim.validate({ act = { act, "string" } })
+        local sidebar = apisupport_getsidebar()
+        if sidebar ~= nil and sidebar_actions[act] ~= nil then
+            sidebar_actions[act](sidebar)
+        end
+    end,
+    refresh_symbols = function()
+        local sidebar = apisupport_getsidebar()
+        if sidebar ~= nil then
+            sidebar:refresh_symbols()
+        end
+    end
+}
 
 return M

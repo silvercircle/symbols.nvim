@@ -6,6 +6,7 @@ local M = {}
 ---@field guide_vert string
 ---@field guide_middle_item string
 ---@field guide_last_item string
+---@field hl string
 
 ---@enum SidebarAction
 M.SidebarAction = {
@@ -99,6 +100,7 @@ M.OpenDirection = {
 ---@field show_guide_lines boolean
 ---@field auto_peek boolean
 ---@field close_on_goto boolean
+---@field unfold_on_goto boolean
 ---@field wrap boolean
 ---@field chars CharConfig
 ---@field preview PreviewConfig
@@ -157,12 +159,14 @@ M.default = {
         auto_peek = false,
         close_on_goto = false,
         wrap = false,
+        unfold_on_goto = false,
         chars = {
             folded = "",
             unfolded = "",
             guide_vert = "│",
             guide_middle_item = "├",
             guide_last_item = "└",
+            hl = "Comment"
         },
         preview = {
             show_always = false,
