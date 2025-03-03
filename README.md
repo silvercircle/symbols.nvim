@@ -387,6 +387,39 @@ Default config below.
 }
 ```
 
+# API
+
+There is now a (currently very simple) API available to control the Sidebar from LUA
+
+```lua
+  ---perform any action defined in SidebarAction
+  ---@param act SidebarAction[]
+  action = function(act)
+    local sidebar = apisupport_getsidebar()
+    if sidebar ~= nil and sidebar_actions[act] ~= nil then
+      sidebar_actions[act](sidebar)
+    end
+  end,
+  ---manually refresh the symbols in the current sidebar
+  refresh_symbols = function()
+    local sidebar = apisupport_getsidebar()
+    if sidebar ~= nil then
+      sidebar:refresh_symbols()
+    end
+  end
+```
+The available actions can be obtained by calling
+
+```lua
+=require("symbols.config").SidebarAction
+```
+
+For example, to unfold the entire tree you would call:
+
+```lua
+require("symbols").api.action("unfold-all")
+```
+
 # Alternatives
 
 - [aerial.nvim](https://github.com/stevearc/aerial.nvim)
