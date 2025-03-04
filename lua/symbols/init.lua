@@ -14,6 +14,10 @@ local providers = require("symbols.providers")
 
 local M = {}
 
+M.FILE_TYPE_MAIN = "SymbolsSidebar"
+M.FILE_TYPE_SEARCH = "SymbolsSearch"
+M.FILE_TYPE_HELP = "SymbolsHelp"
+
 ---@type table<string, boolean>
 local cmds = {}
 
@@ -786,6 +790,7 @@ function SearchView:init_buf()
 
     self.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(self.buf, "symbols.nvim [" .. tostring(self.sidebar.num) .. "]" .. " (search)")
+    vim.api.nvim_buf_set_option(self.buf, "filetype", M.FILE_TYPE_SEARCH)
     nvim.buf_set_modifiable(self.buf, false)
 
     vim.api.nvim_create_autocmd(
@@ -2294,7 +2299,7 @@ end
 function Sidebar:help()
     local help_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("bufhidden", "delete", { buf = help_buf })
-    vim.api.nvim_buf_set_option(self.buf, "filetype", "SymbolsHelp")
+    vim.api.nvim_buf_set_option(help_buf, "filetype", M.FILE_TYPE_HELP)
 
     local keymaps = {}
     for i=1,#help_options_order do keymaps[i] = {} end
@@ -2467,7 +2472,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     nvim.buf_set_modifiable(sidebar.buf, false)
     vim.api.nvim_buf_set_name(sidebar.buf, "symbols.nvim [" .. tostring(num) .. "]")
-    vim.api.nvim_buf_set_option(sidebar.buf, "filetype", "SymbolsSidebar")
+    vim.api.nvim_buf_set_option(sidebar.buf, "filetype", M.FILE_TYPE_MAIN)
 
     for key, action in pairs(config.keymaps) do
         vim.keymap.set(
