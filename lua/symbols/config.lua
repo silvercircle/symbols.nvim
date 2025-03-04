@@ -1,3 +1,4 @@
+-- vim: ts=4:sw=4:set et
 local M = {}
 
 ---@class CharConfig
@@ -7,6 +8,7 @@ local M = {}
 ---@field guide_middle_item string
 ---@field guide_last_item string
 ---@field hl string
+---@field hl_toplevel string
 
 ---@enum SidebarAction
 M.SidebarAction = {
@@ -105,6 +107,8 @@ M.OpenDirection = {
 ---@field chars CharConfig
 ---@field preview PreviewConfig
 ---@field keymaps KeymapsConfig
+---@field on_symbols_complete function
+---@field hl_details string
 
 ---@class SymbolDisplayConfig
 ---@field kind string?
@@ -160,13 +164,15 @@ M.default = {
         close_on_goto = false,
         wrap = false,
         unfold_on_goto = false,
+        hl_details = "Comment",
         chars = {
             folded = "",
             unfolded = "",
             guide_vert = "│",
             guide_middle_item = "├",
             guide_last_item = "└",
-            hl = "Comment"
+            hl = "Comment",
+            hl_toplevel = "Operator"
         },
         preview = {
             show_always = false,
@@ -181,6 +187,7 @@ M.default = {
                 ["q"] = "close",
             },
         },
+        on_symbols_complete = function(_) end,
         keymaps = {
             ["<CR>"] = "goto-symbol",
             ["<RightMouse>"] = "peek-symbol",

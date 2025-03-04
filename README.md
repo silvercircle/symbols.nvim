@@ -240,8 +240,16 @@ Default config below.
             guide_middle_item = "├",
             guide_last_item = "└",
             -- use this highlight group for the guide lines
-            hl = "Comment"
+            hl = "Comment",
+            -- use this highlight group for the toplevel collapse/expand markers
+            hl_toplevel = "String"
         },
+        -- highlight group for the inline details shown next to the symbol name
+        -- (provider - dependant)
+        hl_details = "Comment",
+        -- this function will be called when the symbols have been retrieved
+        -- ctx is of @class CompleteContext
+        on_symbols_complete = function(ctx) end,
         -- Config for the preview window.
         preview = {
             -- Whether the preview window is always opened when the sidebar is
@@ -395,6 +403,7 @@ There is now a (currently very simple) API available to control the Sidebar from
   ---perform any action defined in SidebarAction
   ---@param act SidebarAction[]
   action = function(act)
+    vim.validate({ act = { act, "string" } })
     local sidebar = apisupport_getsidebar()
     if sidebar ~= nil and sidebar_actions[act] ~= nil then
       sidebar_actions[act](sidebar)
