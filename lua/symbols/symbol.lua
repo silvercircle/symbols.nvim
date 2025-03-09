@@ -46,7 +46,7 @@ function M.Symbol_path(symbol)
     while symbol.level > 0 do
         path[symbol.level] = symbol.name
         symbol = symbol.parent
-        ASSERT(symbol ~= nil)
+        S_ASSERT(symbol ~= nil)
     end
     return path
 end

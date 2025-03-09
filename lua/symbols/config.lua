@@ -347,7 +347,7 @@ function M.prepare_config(...)
     if #{...} > 0 then
         config = vim.tbl_deep_extend("force", M.default, ...)
     end
-    if config.dev.enabled then ASSERT = function(...) assert(...) end else ASSERT = function() end end
+    if config.dev.enabled then S_ASSERT = function(...) assert(...) end else S_ASSERT = function() end end
 
     local providers = { "lsp", "treesitter" }
     for _, provider in ipairs(providers) do
