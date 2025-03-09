@@ -1191,6 +1191,7 @@ end
 ---@field show_guide_lines boolean
 ---@field wrap boolean
 ---@field unfold_on_goto boolean
+---@field hl_details string
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field keymaps KeymapsConfig
@@ -1199,6 +1200,7 @@ end
 ---@field cursor_follow boolean
 ---@field auto_peek boolean
 ---@field close_on_goto boolean
+---@field on_symbols_complete function
 local Sidebar = {}
 Sidebar.__index = Sidebar ---@diagnostic disable-line
 
@@ -1230,6 +1232,8 @@ function Sidebar:new()
         show_guide_lines = false,
         wrap = false,
         unfold_on_goto = config.unfold_on_goto,
+        hl_details = config.hl_details,
+        on_symbols_complete = function() end,
         auto_resize = vim.deepcopy(config.auto_resize, true),
         fixed_width = config.fixed_width,
         keymaps = config.keymaps,
@@ -1351,6 +1355,7 @@ end
 ---@param symbols Symbols
 function Sidebar:replace_current_symbols(symbols)
     ASSERT(symbols.buf ~= -1, "symbols.buf has to be set")
+    -- self.buf_symbols[symbols.buf] = nil     -- FIXME: 
     self.buf_symbols[symbols.buf] = symbols
 end
 
@@ -1616,7 +1621,9 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
             local state = symbols.states[sym]
             if state.visible then
                 local prefix
+                local prefix_is_top = true
                 if state.visible_children == 0 then
+                    prefix_is_top = false
                     if show_guide_lines and sym.level > 1 then
                         if sym_i == #symbol.children then
                             prefix = chars.guide_last_item .. " "
@@ -1637,7 +1644,7 @@ local function sidebar_get_buf_lines_and_highlights(symbols, chars, show_guide_l
                 end
                 if show_guide_lines then
                     local highlight = nvim.Highlight:new({
-                      group = chars.hl,
+                      group = prefix_is_top and chars.hl_toplevel or chars.hl,
                       line = line_nr,
                       col_start = #indent,
                       col_end = #indent + 1
@@ -1715,12 +1722,13 @@ end
 
 ---@param buf integer
 ---@param details string[]
-local function sidebar_add_inline_details(buf, details)
+---@param hl string
+local function sidebar_add_inline_details(buf, details, hl)
     for line, detail in ipairs(details) do
         vim.api.nvim_buf_set_extmark(
             buf, SIDEBAR_EXT_NS, line-1, -1,
             {
-                virt_text = { { detail, "Comment" } },
+                virt_text = { { detail, hl or "Comment" } },  -- TODO: hl group for inline text
                 virt_text_pos = "eol",
                 hl_mode = "combine",
             }
@@ -1739,13 +1747,14 @@ function Sidebar:refresh_view()
 
     nvim.buf_set_content(self.buf, buf_lines)
 
+    -- vim.api.nvim_buf_clear_namespace(self.buf, -1, 0, -1) -- FIXME: really?
     for _, highlight in ipairs(highlights) do
         highlight:apply(self.buf)
     end
 
     if self.show_inline_details then
         local details = sidebar_get_inline_details(symbols)
-        sidebar_add_inline_details(self.buf, details)
+        sidebar_add_inline_details(self.buf, details, self.hl_details)
     end
 
     self:refresh_size(buf_lines)
@@ -1804,6 +1813,24 @@ function Sidebar:refresh_symbols()
         Symbols_apply_filter(new_symbols, symbols_filter)
         self:replace_current_symbols(new_symbols)
         self:refresh_view()
+        if self.on_symbols_complete and type(self.on_symbols_complete) == "function" then
+            ---@class CompleteContext
+            ---@field pname        string   --provider name (e.g.: lsp)
+            ---@field id_win       integer  --window id of the sidebar
+            ---@field id_buf       integer  --buf id for the sidebar
+            ---@field id_sourcewin integer  --window id of the corresponding source window
+            ---@field id_sourcebuf integer  --buf id of the source file in id_sourcewin
+            ---@field followmode   boolean  --true if cursor_follow is enabled
+            local ctx = {
+                pname        = provider,
+                id_buf       = self.buf,
+                id_win       = self.win,
+                id_sourcewin = self.source_win,
+                id_sourcebuf = self:source_win_buf(),
+                followmode   = self.cursor_follow
+            }
+            self.on_symbols_complete(ctx)
+        end
     end
 
     ---@param provider_name string
@@ -2469,6 +2496,8 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.auto_peek = config.auto_peek
     sidebar.close_on_goto = config.close_on_goto
     sidebar.unfold_on_goto = config.unfold_on_goto
+    sidebar.hl_details = config.hl_details
+    sidebar.on_symbols_complete = config.on_symbols_complete
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     nvim.buf_set_modifiable(sidebar.buf, false)
