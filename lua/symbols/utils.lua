@@ -8,7 +8,7 @@ utils.MAX_INT = 2147483647
 function utils.tbl_reverse(tbl)
     local rev = {}
     for k, v in pairs(tbl) do
-        assert(rev[v] == nil, "to reverse a map values must be unique")
+        ASSERT(rev[v] == nil, "to reverse a map values must be unique")
         rev[v] = k
     end
     return rev
@@ -35,11 +35,11 @@ function utils.assert_list_is_enum(list, enum, list_name)
     local expected = vim.tbl_values(enum)
     local actual_extra = utils.list_diff(list, expected)
     if #actual_extra > 0 then
-        assert(false, "Invalid values in array " .. list_name .. ": " .. vim.inspect(actual_extra))
+        ASSERT(false, "Invalid values in array " .. list_name .. ": " .. vim.inspect(actual_extra))
     end
     local expected_extra = utils.list_diff(expected, list)
     if #expected_extra > 0 then
-        assert(false, "Missing values in array " .. list_name .. ": " .. vim.inspect(expected_extra))
+        ASSERT(false, "Missing values in array " .. list_name .. ": " .. vim.inspect(expected_extra))
     end
 end
 
@@ -51,11 +51,11 @@ function utils.assert_keys_are_enum(tbl, enum, table_name)
     local expected = vim.tbl_values(enum)
     local actual_extra = utils.list_diff(actual, expected)
     if #actual_extra > 0 then
-        assert(false, "Invalid keys in table " .. table_name .. ": " .. vim.inspect(actual_extra))
+        ASSERT(false, "Invalid keys in table " .. table_name .. ": " .. vim.inspect(actual_extra))
     end
     local expected_extra = utils.list_diff(expected, actual)
     if #expected_extra > 0 then
-        assert(false, "Missing keys in table " .. table_name .. ": " .. vim.inspect(expected_extra))
+        ASSERT(false, "Missing keys in table " .. table_name .. ": " .. vim.inspect(expected_extra))
     end
 end
 

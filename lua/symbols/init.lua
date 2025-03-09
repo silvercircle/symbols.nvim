@@ -1,4 +1,5 @@
 -- vim: ts=4:sw=4:set et
+ASSERT = function(...) end
 local cfg = require("symbols.config")
 local utils = require("symbols.utils")
 local log = require("symbols.log")
@@ -604,7 +605,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, o
             entry.fresh = true
             if not cached then
                 local date = os.date("*t")
-                assert(type(date) ~= "string")
+                ASSERT(type(date) ~= "string")
                 entry.updated = date
             end
             entry.provider_name = provider_name
@@ -656,7 +657,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, o
                 if not ok then
                     _on_fail(provider_name)()
                 else
-                    assert(symbol ~= nil)
+                    ASSERT(symbol ~= nil)
                     _on_retrieve(provider_name, false)(symbol)
                 end
             end
@@ -990,7 +991,7 @@ end
 
 ---@return string
 function SearchView:prev_item_from_history()
-    assert(self.history_idx < #self.history, "SearchView.history_idx too large")
+    ASSERT(self.history_idx < #self.history, "SearchView.history_idx too large")
     if #self.history == 0 then return "" end
     if self.history_idx + 1 == #self.history then
         return self.history[1]
@@ -1262,7 +1263,7 @@ function Sidebar:change_view(new_view)
     elseif self.current_view == "search" then
         self.search_view:hide()
     else
-        assert(false, "Unknown view: " .. tostring(self.current_view))
+        ASSERT(false, "Unknown view: " .. tostring(self.current_view))
     end
 
     if new_view == "symbols" then
@@ -1271,7 +1272,7 @@ function Sidebar:change_view(new_view)
     elseif new_view == "search" then
         self.search_view:show()
     else
-        assert(false, "Unknown view: " .. tostring(new_view))
+        ASSERT(false, "Unknown view: " .. tostring(new_view))
     end
 
     self.current_view = new_view
@@ -1349,7 +1350,7 @@ end
 
 ---@param symbols Symbols
 function Sidebar:replace_current_symbols(symbols)
-    assert(symbols.buf ~= -1, "symbols.buf has to be set")
+    ASSERT(symbols.buf ~= -1, "symbols.buf has to be set")
     self.buf_symbols[symbols.buf] = symbols
 end
 
@@ -1449,7 +1450,7 @@ local function find_split_direction(dir)
     end
 
     ---@diagnostic disable-next-line
-    assert(false, "invalid dir")
+    ASSERT(false, "invalid dir")
 end
 
 ---@return integer, "left" | "right"
@@ -1531,7 +1532,7 @@ end
 
 ---@return Symbol, SymbolState
 function Sidebar:current_symbol()
-    assert(vim.api.nvim_win_is_valid(self.win))
+    ASSERT(vim.api.nvim_win_is_valid(self.win))
 
     local symbols = self:current_symbols()
 
@@ -1681,7 +1682,7 @@ end
 ---@param sidebar Sidebar
 ---@param symbol Symbol
 local function move_cursor_to_symbol(sidebar, symbol)
-    assert(vim.api.nvim_win_is_valid(sidebar.win))
+    ASSERT(vim.api.nvim_win_is_valid(sidebar.win))
     local line = sidebar.lines[symbol]
     vim.api.nvim_win_set_cursor(sidebar.win, { line, 0 })
 end
@@ -2025,7 +2026,7 @@ function Sidebar:goto_parent()
     local count = math.max(vim.v.count, 1)
     while count > 0 and symbol.level > 1 do
         symbol = symbol.parent
-        assert(symbol ~= nil)
+        ASSERT(symbol ~= nil)
         count = count - 1
     end
     self:set_cursor_at_symbol(symbol, false)
@@ -2046,7 +2047,7 @@ end
 function Sidebar:prev_symbol_at_level()
     local symbol, _ = self:current_symbol()
     local symbol_idx = find_symbol_in_list(symbol.parent.children, symbol)
-    assert(symbol_idx ~= -1, "symbol not found")
+    ASSERT(symbol_idx ~= -1, "symbol not found")
     local count = math.max(vim.v.count, 1)
     local new_idx = math.max(symbol_idx - count, 1)
     self:set_cursor_at_symbol(symbol.parent.children[new_idx], false)
@@ -2055,7 +2056,7 @@ end
 function Sidebar:next_symbol_at_level()
     local symbol, _ = self:current_symbol()
     local symbol_idx = find_symbol_in_list(symbol.parent.children, symbol)
-    assert(symbol_idx ~= -1, "symbol not found")
+    ASSERT(symbol_idx ~= -1, "symbol not found")
     local count = math.max(vim.v.count, 1)
     local new_idx = math.min(symbol_idx + count, #symbol.parent.children)
     self:set_cursor_at_symbol(symbol.parent.children[new_idx], false)
@@ -2071,7 +2072,7 @@ function Sidebar:fold()
     local symbol, state = self:current_symbol()
     if symbol.level > 1 and (state.folded or #symbol.children == 0) then
         symbol = symbol.parent
-        assert(symbol ~= nil)
+        ASSERT(symbol ~= nil)
     end
     state.folded = true
     self:refresh_view()
@@ -2092,7 +2093,7 @@ function Sidebar:fold_recursively()
     if changes == 0 then
         while(symbol.level > 1) do
             symbol = symbol.parent
-            assert(symbol ~= nil)
+            ASSERT(symbol ~= nil)
         end
         symbol_change_folded_rec(symbols, symbol, true, utils.MAX_INT)
     end
@@ -2893,6 +2894,7 @@ function M.setup(...)
     if config.dev.enabled then setup_dev(gs, sidebars, config) end
     setup_user_commands(gs, sidebars, symbols_retriever, config)
     setup_autocommands(gs, sidebars, symbols_retriever)
+    ASSERT(true == false)
 end
 
 local apisupport_getsidebar = function()

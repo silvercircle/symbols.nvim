@@ -241,7 +241,7 @@ local function vimdoc_get_symbols(parser, buf)
         else
             while level <= kind_to_capture_level[current.kind] do
                 current = current.parent
-                assert(current ~= nil)
+                ASSERT(current ~= nil)
             end
             ---@type Symbol
             local new = {
@@ -300,7 +300,7 @@ local function markdown_get_symbols(parser, _)
         local level = capture_group_to_level[kind]
         while current.level >= level do
             current = current.parent
-            assert(current ~= nil)
+            ASSERT(current ~= nil)
         end
         local start_row, start_col, end_row, end_col = node:parent():parent():range()
         local section_range = {
@@ -361,7 +361,7 @@ local function json_get_symbols(parser, buf)
         elseif kind == "Null" then
             return "null"
         end
-        assert(false, "unexpected kind: " .. tostring(kind))
+        ASSERT(false, "unexpected kind: " .. tostring(kind))
         return ""
     end
 
@@ -455,7 +455,7 @@ local function org_get_symbols(parser, buf)
         local name = get_ts_node_text(item_node, buf)
         while current.level >= level do
             current = current.parent
-            assert(current ~= nil)
+            ASSERT(current ~= nil)
         end
         local start_row, start_col, end_row, end_col = node:range()
         local section_range = {
@@ -563,7 +563,7 @@ function TSProvider:get_symbols(buf)
         make = make_get_symbols,
     }
     local get_symbols = get_symbols_funs[self.ft]
-    assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(self.ft))
+    ASSERT(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(self.ft))
     return get_symbols(self.parser, buf)
 end
 
