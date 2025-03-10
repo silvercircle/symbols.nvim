@@ -2923,7 +2923,6 @@ function M.setup(...)
     if config.dev.enabled then setup_dev(gs, sidebars, config) end
     setup_user_commands(gs, sidebars, symbols_retriever, config)
     setup_autocommands(gs, sidebars, symbols_retriever)
-    S_ASSERT(true == false)
 end
 
 local apisupport_getsidebar = function()
