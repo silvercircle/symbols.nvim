@@ -2934,7 +2934,7 @@ M.api = {
     action = function(act)
         vim.validate({ act = { act, "string" } })
         local sidebar = apisupport_getsidebar()
-        if sidebar ~= nil and sidebar_actions[act] ~= nil then
+        if sidebar ~= nil and sidebar_actions[act] ~= nil and sidebar:current_symbols().root.children then
             sidebar_actions[act](sidebar)
         end
     end,
