@@ -166,9 +166,11 @@ function LspProvider:async_get_symbols(buf, refresh_symbols, on_fail, on_timeout
 
     ---@param symbol Symbol
     local function sort_symbols(symbol)
-        table.sort(symbol.children, comp_range)
-        for _, child in ipairs(symbol.children) do
-            sort_symbols(child)
+        if symbol.children then
+          table.sort(symbol.children, comp_range)
+          for _, child in ipairs(symbol.children) do
+              sort_symbols(child)
+          end
         end
     end
 
