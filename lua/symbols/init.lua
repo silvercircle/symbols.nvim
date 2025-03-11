@@ -452,9 +452,11 @@ local function SymbolStates_build(root)
     local states = {}
 
     local function traverse(symbol)
-        states[symbol] = SymbolState_new()
-        for _, child in ipairs(symbol.children) do
-            traverse(child)
+        if symbol.children then
+            states[symbol] = SymbolState_new()
+            for _, child in ipairs(symbol.children) do
+                traverse(child)
+            end
         end
     end
 
@@ -497,21 +499,27 @@ local function Symbols_apply_filter(symbols, symbol_filter)
     ---@param symbol Symbol
     local function apply(symbol)
         local state = symbols.states[symbol]
-        if symbol.level == 0 then
-            state.visible = true
-        else
-            state.visible = symbol_filter(ft, symbol)
+        if state then
+            if symbol.level == 0 then
+                state.visible = true
+            else
+                state.visible = symbol_filter(ft, symbol)
+            end
+            state.visible_children = 0
         end
-        state.visible_children = 0
-        for _, child in ipairs(symbol.children) do
-            apply(child)
-            if symbols.states[child].visible then
-                state.visible_children = state.visible_children + 1
+        if state and symbol.children then
+            for _, child in ipairs(symbol.children) do
+                apply(child)
+                if symbols.states[child].visible then
+                    state.visible_children = state.visible_children + 1
+                end
             end
         end
 
-        if state.visible_children > 0 and symbol.level == 1 then
-            symbols.any_nesting = true
+        if state then
+            if state.visible_children > 0 and symbol.level == 1 then
+                symbols.any_nesting = true
+            end
         end
 
     end
@@ -1315,29 +1323,31 @@ local function symbol_at_pos(root, pos)
 
     local current = root
     local partial_match = true
-    while #current.children > 0 and partial_match do
-        partial_match = false
-        local prev = current
-        for _, symbol in ipairs(current.children) do
-            if range_before_pos(symbol.range, pos) then
-                prev = symbol
-            end
-            if not partial_match and in_range_line(symbol.range, pos) then
-                current = symbol
-                partial_match = true
-            end
-            if partial_match then
-                if in_range_line(symbol.range, pos) then
-                    if in_range_character(symbol.range, pos) then
-                        current = symbol
+    if current.children then
+        while #current.children > 0 and partial_match do
+            partial_match = false
+            local prev = current
+            for _, symbol in ipairs(current.children) do
+                if range_before_pos(symbol.range, pos) then
+                    prev = symbol
+                end
+                if not partial_match and in_range_line(symbol.range, pos) then
+                    current = symbol
+                    partial_match = true
+                end
+                if partial_match then
+                    if in_range_line(symbol.range, pos) then
+                        if in_range_character(symbol.range, pos) then
+                            current = symbol
+                            break
+                        end
+                    else
                         break
                     end
-                else
-                    break
                 end
             end
+            if not partial_match then current = prev end
         end
-        if not partial_match then current = prev end
     end
     return current
 end
@@ -1738,6 +1748,11 @@ end
 function Sidebar:refresh_view()
     local symbols = self:current_symbols()
 
+    if not symbols.root.children then
+        local lines = { " no symbols found " }
+        nvim.buf_set_content(self.buf, lines)
+        return
+    end
     local buf_lines, highlights = sidebar_get_buf_lines_and_highlights(
         symbols, self.char_config, self.show_guide_lines
     )
@@ -1769,8 +1784,10 @@ function Sidebar:refresh_symbols()
 
     ---@return Symbol?
     local function _find_symbol_with_name(symbol, name)
-        for _, sym in ipairs(symbol.children) do
-            if sym.name == name then return sym end
+        if symbol.children then
+            for _, sym in ipairs(symbol.children) do
+                if sym.name == name then return sym end
+            end
         end
         return nil
     end
@@ -1782,17 +1799,21 @@ function Sidebar:refresh_symbols()
         ---@param new Symbol
         local function _preserve_folds(old, new)
             if old.level > 0 and old_symbols.states[old].folded then return end
-            for _, new_sym in ipairs(new.children) do
-                local old_sym = _find_symbol_with_name(old, new_sym.name)
-                if old_sym ~= nil then
-                    new_symbols.states[new_sym].folded = old_symbols.states[old_sym].folded
-                    _preserve_folds(old_sym, new_sym)
+            if new.children then
+                for _, new_sym in ipairs(new.children) do
+                    local old_sym = _find_symbol_with_name(old, new_sym.name)
+                    if old_sym ~= nil then
+                        new_symbols.states[new_sym].folded = old_symbols.states[old_sym].folded
+                        _preserve_folds(old_sym, new_sym)
+                    end
                 end
             end
         end
 
         _preserve_folds(old_symbols.root, new_symbols.root)
-        new_symbols.states[new_symbols.root].folded = false
+        if new_symbols.states[new_symbols.root] then
+            new_symbols.states[new_symbols.root].folded = false
+        end
     end
 
     ---@param new_root Symbol
