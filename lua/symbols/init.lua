@@ -2804,6 +2804,8 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
     )
 end
 
+---@type Sidebar[]
+local sidebars = {}
 ---@param gs GlobalState
 ---@param sidebars Sidebar[]
 ---@param symbols_retriever SymbolsRetriever
@@ -2920,9 +2922,6 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
         }
     )
 end
-
----@type Sidebar[]
-local sidebars = {}
 
 function M.setup(...)
     local config = cfg.prepare_config(...)
