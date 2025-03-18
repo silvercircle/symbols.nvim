@@ -215,11 +215,11 @@ Default config below.
             guide_last_item = "└",
             -- use this highlight group for the guide lines
             hl = "Comment",
-            -- use this highlight group for the toplevel collapse/expand markers
-            hl_toplevel = "String"
+            -- use this highlight group for the collapse/expand markers
+            hl_foldmarker = "String"
         },
         -- highlight group for the inline details shown next to the symbol name
-        -- (provider - dependant)
+        -- (provider - dependent)
         hl_details = "Comment",
         -- this function will be called when the symbols have been retrieved
         -- ctx is of @class CompleteContext

@@ -1799,6 +1799,8 @@ local function get_display_lines(ctx, line_nr, symbol, recurse)
                 table.insert(result.highlights, hl)
             end
             line_add(((state.folded and ctx.chars.folded) or ctx.chars.unfolded) .. " ")
+            local hltop = nvim.Highlight:new({ group = ctx.chars.hl_foldmarker, line = line_nr + #result.lines, col_start = 0, col_end = 1 })
+            table.insert(result.highlights, hltop)
         elseif ctx.show_guide_lines and symbol.level > 1 then
             line_add(
                 ((symbol_is_last_child(symbol) and ctx.chars.guide_last_item) or ctx.chars.guide_middle_item) .. " "
