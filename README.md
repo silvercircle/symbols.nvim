@@ -2,36 +2,20 @@
 
 # symbols.nvim
 
-Sidebar with a list of symbols. Gives an overview of a file and allows quick
-navigation.
-
-> **Warning**
->
-> `symbols.nvim` is in beta. You may encounter bugs and breaking changes.
-> For a more stable experience use tags (e.g. "v0.1.0") with you plugin manager.
-
-https://github.com/user-attachments/assets/6262fa59-a320-4043-a3ba-97617f0fd8b3
+Code navigation sidebar. Instantly find your way around any file.
 
 ## Features
 
-- **Listing Symbols** - duh. Uses LSP servers and Treesitter parsers which have to
-  be configured by the user.
-- **Fuzzy Search** - fuzzy search symbols directly from the sidebar
-- **Preview Window** - glance at the code before committing to your next action.
-  You can also edit the file in the preview window.
-- **Inline Details** - symbol details can be displayed inline. Those details are
-  given by a provider (e.g. LSP).
-- **Dynamic Settings** - some of the settings can be changed on the fly, without
-  changing the config and reopening Neovim.
-- **Preserving Folds** - the sidebar preserves folds on changes (at least most of
-  them, most of the time).
-- **Independent Sidebars** - each sidebar has it's own view (folds) and settings,
-  even when there are multiple sidebars showing symbols for the same file.
-- **Custom Display Rules** - symbols formatting and filtering can be configured per
-  language. The goal is to provide great default configurations for many
-  languages while allowing the user to make adjusments according to their
-  preference.
-- **Mouse Support** - you can use your mouse, no judgement.
+- **Listing Symbols** - uses LSP servers and Treesitter parsers.
+- **Fuzzy Search** - quickly find symbols.
+- **Preview Window** - peek at code before jumping, edit in place if needed.
+- **Symbol Details** - display symbol details inline or in a pop-up for extra context.
+- **Dynamic Settings** - change settings on the fly without restarting Neovim.
+- **Custom Display Rules** - configurable filtering and display formatting per language.
+- **Preserving Folds** - keeps your sidebar folds in tact on updates (most of the time).
+- **Mouse Support** - works with mouse.
+
+https://github.com/user-attachments/assets/6262fa59-a320-4043-a3ba-97617f0fd8b3
 
 <!-- panvimdoc-ignore-end -->
 
@@ -59,6 +43,11 @@ Using lazy.nvim:
     end
 }
 ```
+
+> **Warning**
+>
+> The main branch is used for development and may introduce breaking changes without warning.
+> For a more stable experience use tags (e.g. "v0.1.0") with you plugin manager.
 
 # Supported Languages
 
