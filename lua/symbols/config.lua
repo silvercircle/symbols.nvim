@@ -1,4 +1,3 @@
--- vim: ts=4:sw=4:set et
 local M = {}
 
 ---@class CharConfig
