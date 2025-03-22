@@ -1872,11 +1872,6 @@ end
 
 function Sidebar:refresh_view()
     local symbols = self:current_symbols()
-    if not symbols.root.children or #symbols.root.children == 0 then
-        local lines = { " no symbols found " }
-        nvim.buf_set_content(self.buf, lines)
-        self.symbols_retriever.cache[symbols.buf].fresh = false
-    end
 
     local ctx = DisplayContext:new(self)
     local result = get_display_lines(ctx, 1, symbols.root, true)
@@ -1934,8 +1929,8 @@ function Sidebar:refresh_symbols()
         new_symbols.provider = provider
         new_symbols.provider_config = provider_config
         new_symbols.buf = self:source_win_buf()
-        new_symbols.root = new_root
         if not new_root.children then new_root.children = {} end
+        new_symbols.root = new_root
         new_symbols.states = SymbolStates_build(new_root)
         preserve_folds(current_symbols, new_symbols)
         local symbols_filter = (self.symbol_filters_enabled and self.symbol_filter)
