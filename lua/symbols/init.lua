@@ -1783,7 +1783,7 @@ local function get_display_lines(ctx, line_nr, symbol, recurse)
 
         if state.visible_children > 0 then
             if ctx.show_guide_lines then
-                local hl = nvim.Highlight:new({ group = ctx.chars.hl, line = line_nr + #result.lines, col_start = 1, col_end = line_len })
+                local hl = nvim.Highlight:new({ group = ctx.chars.hl_guides, line = line_nr + #result.lines, col_start = 1, col_end = line_len })
                 table.insert(result.highlights, hl)
             end
             line_add(((state.folded and ctx.chars.folded) or ctx.chars.unfolded) .. " ")
@@ -1793,7 +1793,7 @@ local function get_display_lines(ctx, line_nr, symbol, recurse)
             line_add(
                 ((symbol_is_last_child(symbol) and ctx.chars.guide_last_item) or ctx.chars.guide_middle_item) .. " "
             )
-            local hl = nvim.Highlight:new({ group = ctx.chars.hl, line = line_nr + #result.lines, col_start = 1, col_end = line_len })
+            local hl = nvim.Highlight:new({ group = ctx.chars.hl_guides, line = line_nr + #result.lines, col_start = 1, col_end = line_len })
             table.insert(result.highlights, hl)
         else
             local space = (symbol.level == 1 and ctx.using_folds) and "  " or " "

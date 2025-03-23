@@ -214,7 +214,7 @@ Default config below.
             guide_middle_item = "├",
             guide_last_item = "└",
             -- use this highlight group for the guide lines
-            hl = "Comment",
+            hl_guides = "Comment",
             -- use this highlight group for the collapse/expand markers
             hl_foldmarker = "String"
         },
