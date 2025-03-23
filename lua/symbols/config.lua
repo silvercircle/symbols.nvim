@@ -6,7 +6,7 @@ local M = {}
 ---@field guide_vert string
 ---@field guide_middle_item string
 ---@field guide_last_item string
----@field hl string
+---@field hl_guides string
 ---@field hl_foldmarker string
 
 ---@enum SidebarAction
@@ -170,7 +170,7 @@ M.default = {
             guide_vert = "│",
             guide_middle_item = "├",
             guide_last_item = "└",
-            hl = "Comment",
+            hl_guides = "Comment",
             hl_foldmarker = "Operator"
         },
         preview = {
