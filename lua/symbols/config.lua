@@ -7,6 +7,7 @@ local M = {}
 ---@field guide_middle_item string
 ---@field guide_last_item string
 ---@field hl string
+---@field hl_foldmarker string
 
 ---@enum SidebarAction
 M.SidebarAction = {
@@ -105,6 +106,7 @@ M.OpenDirection = {
 ---@field chars CharConfig
 ---@field preview PreviewConfig
 ---@field keymaps KeymapsConfig
+---@field hl_details string
 
 ---@class SymbolDisplayConfig
 ---@field kind string?
@@ -160,13 +162,15 @@ M.default = {
         close_on_goto = false,
         wrap = false,
         unfold_on_goto = false,
+        hl_details = "Comment",
         chars = {
             folded = "",
             unfolded = "",
             guide_vert = "│",
             guide_middle_item = "├",
             guide_last_item = "└",
-            hl = "Comment"
+            hl = "Comment",
+            hl_foldmarker = "Operator"
         },
         preview = {
             show_always = false,

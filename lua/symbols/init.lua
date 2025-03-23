@@ -1208,6 +1208,7 @@ end
 ---@field show_guide_lines boolean
 ---@field wrap boolean
 ---@field unfold_on_goto boolean
+---@field hl_details string
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field keymaps KeymapsConfig
@@ -1249,6 +1250,7 @@ function Sidebar:new()
         show_guide_lines = false,
         wrap = false,
         unfold_on_goto = config.unfold_on_goto,
+        hl_details = config.hl_details,
         auto_resize = vim.deepcopy(config.auto_resize, true),
         fixed_width = config.fixed_width,
         keymaps = config.keymaps,
@@ -1785,6 +1787,8 @@ local function get_display_lines(ctx, line_nr, symbol, recurse)
                 table.insert(result.highlights, hl)
             end
             line_add(((state.folded and ctx.chars.folded) or ctx.chars.unfolded) .. " ")
+            local hltop = nvim.Highlight:new({ group = ctx.chars.hl_foldmarker, line = line_nr + #result.lines, col_start = 0, col_end = 1 })
+            table.insert(result.highlights, hltop)
         elseif ctx.show_guide_lines and symbol.level > 1 then
             line_add(
                 ((symbol_is_last_child(symbol) and ctx.chars.guide_last_item) or ctx.chars.guide_middle_item) .. " "
@@ -1851,12 +1855,12 @@ end
 ---@param buf integer
 ---@param start_line integer zero-indexed
 ---@param details string[]
-local function buf_add_inline_details(buf, start_line, details)
+local function buf_add_inline_details(buf, start_line, details, hl)
     for line, detail in ipairs(details) do
         vim.api.nvim_buf_set_extmark(
             buf, SIDEBAR_EXT_NS, start_line + line - 1, -1,
             {
-                virt_text = { { detail, "Comment" } },
+                virt_text = { { detail, hl or "Comment" } },  -- TODO: hl group for inline text
                 virt_text_pos = "eol",
                 hl_mode = "combine",
             }
@@ -2740,6 +2744,7 @@ local function sidebar_new(sidebar, symbols_retriever, num, config, gs, debug)
     sidebar.auto_peek = config.auto_peek
     sidebar.close_on_goto = config.close_on_goto
     sidebar.unfold_on_goto = config.unfold_on_goto
+    sidebar.hl_details = config.hl_details
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     nvim.buf_set_modifiable(sidebar.buf, false)
@@ -3027,6 +3032,8 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
     )
 end
 
+---@type Sidebar[]
+local sidebars = {}
 ---@param gs GlobalState
 ---@param sidebars Sidebar[]
 ---@param symbols_retriever SymbolsRetriever
@@ -3158,9 +3165,6 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
     )
 end
 
----@type Sidebar[]
-local sidebars = {}
-
 function M.setup(...)
     local config = cfg.prepare_config(...)
 
@@ -3192,7 +3196,7 @@ M.api = {
     action = function(act)
         vim.validate({ act = { act, "string" } })
         local sidebar = apisupport_getsidebar()
-        if sidebar ~= nil and sidebar_actions[act] ~= nil then
+        if sidebar ~= nil and sidebar_actions[act] ~= nil and sidebar:current_symbols().root.children then
             sidebar_actions[act](sidebar)
         end
     end,
@@ -3200,6 +3204,7 @@ M.api = {
         local sidebar = apisupport_getsidebar()
         if sidebar ~= nil then
             sidebar:refresh_symbols()
+            sidebar:refresh_view()
         end
     end
 }
