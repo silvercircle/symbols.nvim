@@ -116,7 +116,7 @@ local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
         lsp_symbol.children = new_children
     end
 
-    if lsp_symbol.children and #lsp_symbol.children > 0 then
+    if #lsp_symbol.children > 0 then
         if lsp_symbol.children[1].location == nil then
             rec_tidy_document_symbol(lsp_symbol, parent, level)
         else
@@ -166,11 +166,9 @@ function LspProvider:async_get_symbols(buf, refresh_symbols, on_fail, on_timeout
 
     ---@param symbol Symbol
     local function sort_symbols(symbol)
-        if symbol.children then
-          table.sort(symbol.children, comp_range)
-          for _, child in ipairs(symbol.children) do
-              sort_symbols(child)
-          end
+        table.sort(symbol.children, comp_range)
+        for _, child in ipairs(symbol.children) do
+            sort_symbols(child)
         end
     end
 
