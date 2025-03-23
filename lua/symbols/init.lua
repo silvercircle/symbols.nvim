@@ -1877,7 +1877,7 @@ function Sidebar:refresh_view()
     vim.api.nvim_buf_clear_namespace(self.buf, SIDEBAR_EXT_NS, 0, -1)
     nvim.buf_set_content(self.buf, result.lines)
     buf_add_highlights(self.buf, result.highlights)
-    buf_add_inline_details(self.buf, 0, result.inline_details)
+    buf_add_inline_details(self.buf, 0, result.inline_details, self.hl_details)
 
     self:refresh_size()
 end
@@ -2108,7 +2108,7 @@ function Sidebar:set_cursor_at_symbol(target, unfold)
         nvim.buf_set_modifiable(self.buf, false)
 
         buf_add_highlights(self.buf, result.highlights)
-        buf_add_inline_details(self.buf, top_level_ancestor_line-1, result.inline_details)
+        buf_add_inline_details(self.buf, top_level_ancestor_line-1, result.inline_details, self.hl_details)
     end
 
     nvim.win_set_cursor(self.win, current_line, 0)
@@ -2255,7 +2255,7 @@ function Sidebar:_unfold(symbol, symbol_line)
     nvim.buf_set_modifiable(self.buf, false)
 
     buf_add_highlights(self.buf, result.highlights)
-    buf_add_inline_details(self.buf, symbol_line-1, result.inline_details)
+    buf_add_inline_details(self.buf, symbol_line-1, result.inline_details, self.hl_details)
 
     self:set_cursor_at_symbol(symbol, false)
     self:schedule_refresh_size()
@@ -2286,7 +2286,7 @@ function Sidebar:_fold(symbol, symbol_line, symbol_line_count)
     nvim.buf_set_modifiable(self.buf, false)
 
     buf_add_highlights(self.buf, result.highlights)
-    buf_add_inline_details(self.buf, symbol_line-1, result.inline_details)
+    buf_add_inline_details(self.buf, symbol_line-1, result.inline_details, self.hl_details)
 
     self:set_cursor_at_symbol(symbol, false)
     self:schedule_refresh_size()
@@ -2327,7 +2327,7 @@ function Sidebar:unfold_recursively()
     nvim.buf_set_modifiable(self.buf, false)
 
     buf_add_highlights(self.buf, result.highlights)
-    buf_add_inline_details(self.buf, cursor_line-1, result.inline_details)
+    buf_add_inline_details(self.buf, cursor_line-1, result.inline_details, self.hl_details)
 
     self:set_cursor_at_symbol(symbol, false)
     self:schedule_refresh_size()
@@ -2455,7 +2455,7 @@ function Sidebar:toggle_details()
         local ctx = DisplayContext:new(self)
         local symbols = self:current_symbols()
         local details = get_inline_details(ctx, symbols.root, true)
-        buf_add_inline_details(self.buf, 0, details)
+        buf_add_inline_details(self.buf, 0, details, self.hl_details)
     else
         buf_clear_inline_details(self.buf, 0, -1)
     end
