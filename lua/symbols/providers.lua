@@ -116,6 +116,7 @@ local function rec_tidy_lsp_symbol(lsp_symbol, parent, level)
         lsp_symbol.children = new_children
     end
 
+    lsp_symbol.children = lsp_symbol.children or {}
     if #lsp_symbol.children > 0 then
         if lsp_symbol.children[1].location == nil then
             rec_tidy_document_symbol(lsp_symbol, parent, level)
