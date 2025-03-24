@@ -197,8 +197,8 @@ function Preview:open()
         opts.row = cursor[1] - 1
         opts.col = 0
     end
-
     self.win = vim.api.nvim_open_win(source_buf, false, opts)
+    vim.wo[self.win].winbar = ""
     if config.show_line_number then
         vim.wo[self.win].number = true
     end
