@@ -3233,7 +3233,6 @@ M.api = {
         local sidebar = apisupport_getsidebar()
         if sidebar ~= nil then
             sidebar:refresh_symbols()
-            sidebar:refresh_view()
         end
     end
 }
