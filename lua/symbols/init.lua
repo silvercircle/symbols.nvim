@@ -197,8 +197,8 @@ function Preview:open()
         opts.row = cursor[1] - 1
         opts.col = 0
     end
+
     self.win = vim.api.nvim_open_win(source_buf, false, opts)
-    vim.wo[self.win].winbar = ""
     if config.show_line_number then
         vim.wo[self.win].number = true
     end
@@ -1789,7 +1789,7 @@ local function get_display_lines(ctx, line_nr, symbol, recurse)
                 table.insert(result.highlights, hl)
             end
             line_add(((state.folded and ctx.chars.folded) or ctx.chars.unfolded) .. " ")
-            local hltop = nvim.Highlight:new({ group = ctx.chars.hl_foldmarker, line = line_nr + #result.lines, col_start = 0, col_end = 1 })
+            local hltop = nvim.Highlight:new({ group = ctx.chars.hl_foldmarker, line = line_nr + #result.lines, col_start = 0, col_end = line_len })
             table.insert(result.highlights, hltop)
         elseif ctx.show_guide_lines and symbol.level > 1 then
             line_add(
@@ -1875,6 +1875,13 @@ function Sidebar:refresh_view()
 
     local ctx = DisplayContext:new(self)
     local result = get_display_lines(ctx, 1, symbols.root, true)
+
+    if #result.lines == 0 then
+        vim.notify("warning no lines")
+        self.symbols_retriever.cache[symbols.buf].fresh = false
+        local lines = { "No Symbols" }
+        nvim.buf_set_content(self.buf, lines)
+    end
 
     vim.api.nvim_buf_clear_namespace(self.buf, SIDEBAR_EXT_NS, 0, -1)
     nvim.buf_set_content(self.buf, result.lines)
