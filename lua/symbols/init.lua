@@ -492,7 +492,7 @@ end
 ---@field root Symbol
 ---@field states SymbolStates
 ---@field any_nesting boolean
-
+---@field count number
 ---@return Symbols
 local function Symbols_new()
     local root = Symbol_root()
@@ -504,6 +504,7 @@ local function Symbols_new()
             [root] = SymbolState_new()
         },
         any_nesting = false,
+        count = 0
     }
     symbols.states[root].folded = false
     return symbols
@@ -514,7 +515,7 @@ end
 local function Symbols_apply_filter(symbols, symbol_filter)
     local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
     symbols.any_nesting = false
-
+    symbols.count = 0
     ---@param symbol Symbol
     local function apply(symbol)
         local state = symbols.states[symbol]
@@ -525,6 +526,7 @@ local function Symbols_apply_filter(symbols, symbol_filter)
         end
         state.visible_children = 0
         for _, child in ipairs(symbol.children) do
+            symbols.count = symbols.count + 1
             apply(child)
             if symbols.states[child].visible then
                 state.visible_children = state.visible_children + 1
@@ -1788,8 +1790,9 @@ local function get_display_lines(ctx, line_nr, symbol, recurse)
                 local hl = nvim.Highlight:new({ group = ctx.chars.hl_guides, line = line_nr + #result.lines, col_start = 1, col_end = line_len })
                 table.insert(result.highlights, hl)
             end
+            local fm_col_pos = line_len
             line_add(((state.folded and ctx.chars.folded) or ctx.chars.unfolded) .. " ")
-            local hltop = nvim.Highlight:new({ group = ctx.chars.hl_foldmarker, line = line_nr + #result.lines, col_start = 0, col_end = line_len })
+            local hltop = nvim.Highlight:new({ group = ctx.chars.hl_foldmarker, line = line_nr + #result.lines, col_start = fm_col_pos, col_end = line_len })
             table.insert(result.highlights, hltop)
         elseif ctx.show_guide_lines and symbol.level > 1 then
             line_add(
@@ -1857,12 +1860,13 @@ end
 ---@param buf integer
 ---@param start_line integer zero-indexed
 ---@param details string[]
+---@param hl string
 local function buf_add_inline_details(buf, start_line, details, hl)
     for line, detail in ipairs(details) do
         vim.api.nvim_buf_set_extmark(
             buf, SIDEBAR_EXT_NS, start_line + line - 1, -1,
             {
-                virt_text = { { detail, hl or "Comment" } },  -- TODO: hl group for inline text
+                virt_text = { { detail, hl } },
                 virt_text_pos = "eol",
                 hl_mode = "combine",
             }
@@ -1953,6 +1957,7 @@ function Sidebar:refresh_symbols()
             ---@field id_sourcewin integer  --window id of the corresponding source window
             ---@field id_sourcebuf integer  --buf id of the source file in id_sourcewin
             ---@field followmode   boolean  --true if cursor_follow is enabled
+            ---@field symbolcount  integer  --total number of symbols in the sidebar
             local ctx = {
                 pname        = provider,
                 id_buf       = self.buf,
@@ -1960,6 +1965,7 @@ function Sidebar:refresh_symbols()
                 id_sourcewin = self.source_win,
                 id_sourcebuf = self:source_win_buf(),
                 followmode   = self.cursor_follow,
+                symbolcount  = self.buf_symbols[self:source_win_buf()].count
             }
             self.on_symbols_complete(ctx)
         end
@@ -3061,8 +3067,6 @@ local function setup_user_commands(gs, sidebars, symbols_retriever, config)
     )
 end
 
----@type Sidebar[]
-local sidebars = {}
 ---@param gs GlobalState
 ---@param sidebars Sidebar[]
 ---@param symbols_retriever SymbolsRetriever
@@ -3194,6 +3198,9 @@ local function setup_autocommands(gs, sidebars, symbols_retriever)
     )
 end
 
+---@type Sidebar[]
+local sidebars = {}
+
 function M.setup(...)
     local config = cfg.prepare_config(...)
 
@@ -3225,7 +3232,7 @@ M.api = {
     action = function(act)
         vim.validate({ act = { act, "string" } })
         local sidebar = apisupport_getsidebar()
-        if sidebar ~= nil and sidebar_actions[act] ~= nil and sidebar:current_symbols().root.children then
+        if sidebar ~= nil and sidebar_actions[act] ~= nil then
             sidebar_actions[act](sidebar)
         end
     end,
