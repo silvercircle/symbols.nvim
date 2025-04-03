@@ -14,6 +14,7 @@ Code navigation sidebar. Instantly find your way around any file.
 - **Custom Display Rules** - configurable filtering and display formatting per language.
 - **Preserving Folds** - keeps your sidebar folds in tact on updates (most of the time).
 - **Mouse Support** - works with mouse.
+- **Lua API** - for powerful keymaps and automations.
 
 https://github.com/user-attachments/assets/6262fa59-a320-4043-a3ba-97617f0fd8b3
 
@@ -27,6 +28,11 @@ https://github.com/user-attachments/assets/6262fa59-a320-4043-a3ba-97617f0fd8b3
 
 # Quick Start
 
+> **Warning**
+>
+> The main branch is used for development and may introduce breaking changes without warning.
+> For a more stable experience use tags with you plugin manager.
+
 Using lazy.nvim:
 
 ```lua
@@ -34,20 +40,26 @@ Using lazy.nvim:
     "oskarrrrrrr/symbols.nvim",
     config = function()
         local r = require("symbols.recipes")
-        require("symbols").setup(r.DefaultFilters, r.AsciiSymbols, {
-            -- custom settings here
-            -- e.g. hide_cursor = false
-        })
-        vim.keymap.set("n", ",s", "<cmd> Symbols<CR>")
-        vim.keymap.set("n", ",S", "<cmd> SymbolsClose<CR>")
+        require("symbols").setup(
+            r.DefaultFilters,
+            r.AsciiSymbols,
+            {
+                sidebar = {
+                    -- custom settings here
+                    -- e.g. hide_cursor = false
+                }
+            }
+        )
+        vim.keymap.set("n", ",s", "<cmd>Symbols<CR>")
+        vim.keymap.set("n", ",S", "<cmd>SymbolsClose<CR>")
     end
 }
 ```
 
-> **Warning**
->
-> The main branch is used for development and may introduce breaking changes without warning.
-> For a more stable experience use tags (e.g. "v0.1.0") with you plugin manager.
+Make sure to checkout these sections:
+- [Tips](#tips)
+- [Configuration](#configuration) (especially the example config with cool keymaps)
+- [Lua API](#lua-api) (useful for custom keymaps and automations)
 
 # Supported Languages
 
@@ -153,6 +165,202 @@ There are a few predefined recipes (configs) that you can use:
 - FancySymbols - symbol kind will be displated as an icon. Needs `lspkind.nvim`.
 
 The recipes are available in `symbols.recipes` module.
+
+<details>
+<summary>Example Config With Cool Keymaps</summary>
+
+```lua
+local function symbols_setup()
+    local symbols = require("symbols")
+    local r = require("symbols.recipes")
+
+    symbols.setup(
+        r.DefaultFilters,
+        r.AsciiSymbols, -- or r.FancySymbols
+        { -- custom settings
+            sidebar = {
+                auto_peek = false,
+                cursor_follow = true,
+                close_on_goto = false,
+                preview = {
+                    -- add a convenient keymap
+                    keymaps = { ["<cr>"] = "goto-code" }
+                },
+            },
+        }
+    )
+
+    -- Example keymaps below.
+
+    -- async, needed for some keymaps
+    local a = Symbols.a
+
+    -- Open the sidebar.
+    vim.keymap.set("n", ",s", "<cmd>Symbols<CR>")
+
+    -- Close the sidebar.
+    vim.keymap.set("n", ",S", "<cmd>SymbolsClose<CR>")
+
+    -- Search in the sidebar. Open the sidebar if it's closed.
+    vim.keymap.set(
+        "n", "s",
+        a.sync(function()
+            a.wait(Symbols.sidebar.open(0))
+            Symbols.sidebar.view_set(0, "search")
+            Symbols.sidebar.focus(0)
+        end)
+    )
+
+    -- Show current symbol in the sidebar (unfolds symbols if needed).
+    -- Opens the sidebar if it's closed. Especially useful with deeply
+    -- nested symbols, e.g. when using with JSON files.
+    vim.keymap.set(
+        "n", "gs",
+        a.sync(function()
+            a.wait(Symbols.sidebar.open(0))
+            Symbols.sidebar.symbols.goto_symbol_under_cursor(0)
+            Symbols.sidebar.focus(0)
+        end)
+    )
+
+    -- The next two mappings move the cursor up/down in the sidebar and peek the symbol
+    -- without changing the focused window.
+
+    vim.keymap.set(
+        "n", "<C-k>",
+        function()
+            if not Symbols.sidebar.visible(0) then return end
+            Symbols.sidebar.view_set(0, "symbols")
+            Symbols.sidebar.focus(0)
+            local count = math.max(vim.v.count, 1)
+            local pos = vim.api.nvim_win_get_cursor(0)
+            local new_cursor_row = math.max(1, pos[1] - count)
+            pcall(vim.api.nvim_win_set_cursor, 0, {new_cursor_row, pos[2]})
+            Symbols.sidebar.symbols.current_peek(0)
+            Symbols.sidebar.focus_source(0)
+        end
+    )
+
+    vim.keymap.set(
+        "n", "<C-j>",
+        function()
+            if not Symbols.sidebar.visible(0) then return end
+            Symbols.sidebar.view_set(0, "symbols")
+            Symbols.sidebar.focus(0)
+            local win = Symbols.sidebar.win(0)
+            local sidebar_line_count = vim.fn.line("$", win)
+            local pos = vim.api.nvim_win_get_cursor(0)
+            local count = math.max(vim.v.count, 1)
+            local new_cursor_row = math.min(sidebar_line_count, pos[1] + count)
+            pcall(vim.api.nvim_win_set_cursor, 0, {new_cursor_row, pos[2]})
+            Symbols.sidebar.symbols.current_peek(0)
+            Symbols.sidebar.focus_source(0)
+        end
+    )
+
+    -- Below are 8 mappings (zm, Zm, zr, zR, zo, zO, zc, zC) for managing folds.
+    -- They modify the sidebar folds and regular vim folds at the same time.
+    -- In some cases the behavior might be surprising, for instance, when you
+    -- use folds that do not correspond to symbols in the sidebar.
+
+    vim.keymap.set(
+        "n", "zm",
+        function()
+            if Symbols.sidebar.visible(0) then
+                local count = math.max(vim.v.count, 1)
+                Symbols.sidebar.symbols.fold(0, count)
+            end
+            pcall(vim.cmd, "normal! zm")
+        end
+    )
+
+    vim.keymap.set(
+        "n", "zM",
+        function()
+            if Symbols.sidebar.visible(0) then
+                Symbols.sidebar.symbols.fold_all(0)
+            end
+            pcall(vim.cmd, "normal! zM")
+        end
+    )
+
+
+    vim.keymap.set(
+        "n", "zr",
+        function()
+            if Symbols.sidebar.visible(0) then
+                local count = math.max(vim.v.count, 1)
+                Symbols.sidebar.symbols.unfold(0, count)
+            end
+            pcall(vim.cmd, "normal! zr")
+        end
+    )
+
+    vim.keymap.set(
+        "n", "zR",
+        function()
+            local sb = Symbols.sidebar.get()
+            if Symbols.sidebar.visible(sb) then
+                Symbols.sidebar.symbols.unfold_all(sb)
+            end
+            pcall(vim.cmd, "normal! zR")
+        end
+    )
+
+    vim.keymap.set(
+        "n", "zo",
+        function()
+            local sb = Symbols.sidebar.get()
+            if Symbols.sidebar.visible(sb) then
+                Symbols.sidebar.symbols.current_unfold(sb)
+            end
+            pcall(vim.cmd, "normal! zo")
+        end
+    )
+
+    vim.keymap.set(
+        "n", "zO",
+        function()
+            local sb = Symbols.sidebar.get()
+            if Symbols.sidebar.visible(sb) then
+                Symbols.sidebar.symbols.current_unfold(sb, true)
+            end
+            pcall(vim.cmd, "normal! zO")
+        end
+    )
+
+    vim.keymap.set(
+        "n", "zc",
+        function()
+            local sb = Symbols.sidebar.get()
+            if Symbols.sidebar.visible(sb) then
+                if (
+                    Symbols.sidebar.symbols.current_visible_children(sb) == 0
+                    or Symbols.sidebar.symbols.current_folded(sb)
+                ) then
+                    Symbols.sidebar.symbols.goto_parent(sb)
+                else
+                    Symbols.sidebar.symbols.current_fold(sb)
+                end
+            end
+            pcall(vim.cmd, "normal! zc")
+        end
+    )
+
+    vim.keymap.set(
+        "n", "zC",
+        function()
+            local sb = Symbols.sidebar.get()
+            if Symbols.sidebar.visible(sb) then
+                Symbols.sidebar.symbols.current_fold(sb, true)
+            end
+            pcall(vim.cmd, "normal! zC")
+        end
+    )
+end
+```
+
+</details>
 
 ## Reference
 
@@ -369,42 +577,316 @@ Default config below.
 }
 ```
 
-# API
+# Lua API
 
-There is now a (currently very simple) API available to control the Sidebar from LUA
+> **warning** - Lua API is experimental for now. There might be breaking changes without additional warnings.
+
+A global variable `Symbols` is defined on setup. You can use it instead of `require("symbols")`.
+
+## Constants
+
+**`Symbols.FILE_TYPE_MAIN`**
+
+File type set for the buffer used for symbols tree view.
+
+**`Symbols.FILE_TYPE_SEARCH`**
+
+File type set for the buffer used for symbols search.
+
+**`Symbols.FILE_TYPE_HELP`**
+
+File type set for the buffer used to display help.
+
+## Dev
+
+**`Symbols.log_level_set(level: integer)`**
+
+Use builtin log levels: `vim.log.levels`.
+
+## Async
+
+We expose a simple async library to avoid nested callbacks (aka "callback hell").
+Note, you probably don't have to understand exactly how this async implementation works.
+There are some nested functions which can get confusing. To save time consider skimming
+this section but try to understand the examples.
+
+In this section we refer to wrapped functions, these are the functions wrapped
+with `Symbols.a.wrap`. Wrapped functions can be awaited. Most users probably won't
+need to wrap any functions themselves.
+
+**`Symbols.a.sync(f: fun())`**
+
+Wrapped functions can be a.wait-ed inside a.sync functions.
+
+**`Symbols.a.wait(f: fun(callback: fun(R...))): R...`**
+
+Runs and waits for a wrapped function to complete. Has to be called within an async function.
+Will return any values passed to the callback function.
+
+**`Symbols.a.fire_and_forget(f: fun(callback: fun(...)))`**
+
+Calls a wrapped function `f` and continues execution without waiting for it to
+finish. Can be used outside of async functions. Note that it will discard any
+return values.
+
+**`Symbols.a.wrap(f: fun(V..., callback: fun(...): ...)): (fun(V...): fun(callback: fun(R...): R...))`**
+
+This function is used internally to expose awaitable functions. Use it to wrap
+a callback based function and make it awaitable.
+
+<details>
+<summary>Usage Example</summary>
 
 ```lua
-  ---perform any action defined in SidebarAction
-  ---@param act SidebarAction[]
-  action = function(act)
-    vim.validate({ act = { act, "string" } })
-    local sidebar = apisupport_getsidebar()
-    if sidebar ~= nil and sidebar_actions[act] ~= nil then
-      sidebar_actions[act](sidebar)
-    end
-  end,
-  ---manually refresh the symbols in the current sidebar
-  refresh_symbols = function()
-    local sidebar = apisupport_getsidebar()
-    if sidebar ~= nil then
-      sidebar:refresh_symbols()
-    end
-  end
+local a = Symbols.a
+
+-- prints x after t miliseconds and returns x
+local delayed_print = a.wrap(function(x, t, callback)
+    vim.defer_fn(
+        function()
+            vim.print(x)
+            -- Make sure to call the callback whenever the function is done.
+            -- Otherwise, a.wait will wait indefinitely.
+            --
+            -- Return values can be passed via arguments of the callback.
+            callback(x)
+        end,
+        t
+    )
+end)
+
+-- a.wait-able functions have to be called from a.sync functions
+a.sync(function()
+    -- a.fire_and_forget calls delayed_print and continues (without waiting for it to finish).
+    a.fire_and_forget(
+        delayed_print("This should print last.", 1100)
+    )
+
+    -- a.wait calls delayed_print and waits for it to finish.
+    local s = a.wait(
+        delayed_print("Hellope", 1000)
+    )
+    vim.print("Got return value: " .. s)
+
+    vim.print("This should print second to last.")
+end)() -- Important! Remember to call the async function.
+
+-- Note that fire_and_forget can be used outside of async functions.
+a.fire_and_forget(delayed_print("This should print second.", 100))
+
+-- While an a.sync function a.wait-s other code will run in the meantine.
+vim.print("This should print first.")
 ```
-The available actions can be obtained by calling
+
+</details>
+
+## Sidebar
+
+First parameter to most functions in this section is `sb` of type `symbols.SidebarId`.
+It will not be annotated to avoid clutter. Similarly to Neovim Lua API, you can use `0`
+to indicate the current sidebar.
+
+**`Symbols.sidebar.get(win: integer?) -> symbols.SidebarId`**
+
+Get sidebar for window `win`. Current window will be used if `win` is skipped.
+Passing `win` which is already used by a sidebar is fine and will return its id.
+If there is no sidebar for the given window yet then it will be created but not opened.
+
+**`Symbols.sidebar.open(sb)`**
+
+Wrapped function that opens a sidebar. It's safe to call when the sidebar is already open.
+
+<details>
+<summary>Example</summary>
 
 ```lua
-=require("symbols.config").SidebarAction
+local a = Symbols.a
+a.sync(function()
+    a.wait(Symbols.sidebar.open(0))
+    Symbols.sidebar.symbols.unfold_all(0)
+end)()
 ```
 
-For example, to unfold the entire tree you would call:
+</details>
 
-```lua
-require("symbols").api.action("unfold-all")
-```
+**`Symbols.sidebar.close(sb)`**
+
+Closes a sidebar.
+
+**`Symbols.sidebar.close_all()`**
+
+Closes all sidebars (in all tabs).
+
+**`Symbols.sidebar.visible(sb): boolean`**
+
+Check whether a sidebar is visible (opened).
+
+**`Symbols.sidebar.win(sb): integer`**
+
+Get the window id of the window in which the sidebar is displayed.
+
+**`Symbols.sidebar.win_source(sb): integer`**
+
+Get the window id of the window with source code.
+
+**`Symbols.sidebar.focus(sb)`**
+
+Set current window to sidebar.
+
+**`Symbols.sidebar.focus_source(sb)`**
+
+Set current window to source code.
+
+**`Symbols.sidebar.cursor_hiding_set(hide_cursor: boolean)`**
+
+Set cursor hiding. Note this is a global setting so `sb` is not needed.
+
+**`Symbols.sidebar.cursor_hiding_toggle()`**
+
+Toggle cursor hiding. Note this is a global setting so `sb` is not needed.
+
+**`Symbols.sidebar.view_set(sb, view: "symbols" | "search")`**
+
+Change sidebar view. Doesn't change the focused window.
+
+**`Symbols.sidebar.view_get(sb): "symbols" | "search"`**
+
+Get current sidebar view.
+
+**`Symbols.sidebar.auto_resize_set(sb, auto_resize: boolean)`**
+
+Enable/disable auto resizing.
+
+**`Symbols.sidebar.auto_resize_toggle(sb)`**
+
+Toggle auto resizing.
+
+**`Symbols.sidebar.auto_resize_get(sb): boolean`**
+
+Get auto resize setting.
+
+**`Symbols.sidebar.width_min_set(sb, min_width: integer)`**
+
+Set minimum width. This setting is relevant only if auto resizing is enabled.
+
+**`Symbols.sidebar.width_min_get(sb): integer`**
+
+Get minimum width. This setting is relevant only if auto resizing is enabled.
+
+**`Symbols.sidebar.width_max_set(sb, max_width: integer)`**
+
+Set maximum width. This setting is relevant only if auto resizing is enabled.
+
+**`Symbols.sidebar.width_max_get(sb): integer`**
+
+Get maximum width. This setting is relevant only if auto resizing is enabled.
+
+**`Symbols.sidebar.filters_enabled_set(sb, filters_enabled: boolean)`**
+
+Enables/disables all filters.
+
+**`Symbols.sidebar.filters_enabled_toggle`**
+
+Toggles all filters.
+
+### Symbols
+
+**`Symbols.sidebar.symbols.force_refresh(sb)`**
+
+Wrapped function that fetches symbols from provider (LSP, Treesitter, etc.)
+and renders them in the sidebar.
+
+**`Symbols.sidebar.symbols.fold_all(sb)`**
+
+Folds all symbols.
+
+**`Symbols.sidebar.symbols.unfold_all(sb)`**
+
+Unfolds all symbols.
+
+**`Symbols.sidebar.symbols.unfold(sb, levels: integer?)`**
+
+Unfolds by `levels` levels or 1 if argument skipped.
+
+**`Symbols.sidebar.symbols.fold(sb, levels: integer?)`**
+
+Folds by `levels` levels or 1 if argument skipped.
+
+**`Symbols.sidebar.symbols.goto_symbol_under_cursor(sb)`**
+
+Moves the cursor in the sidebar to the symbol under cursor in the source code window.
+Doesn't change the focused window.
+
+**`Symbols.sidebar.symbols.inline_details_show_set(sb, show_inline_details: boolean)`**
+
+Enable/disable inline details.
+
+**`Symbols.sidebar.symbols.inline_details_show_toggle(sb)`**
+
+Toggle inline details.
+
+**`Symbols.sidebar.symbols.details_auto_show_set(sb, auto_show_details: boolean)`**
+
+Enable/disable auto showing of details window.
+
+**`Symbols.sidebar.symbols.details_auto_show_toggle(sb)`**
+
+Toggle auto showing of details window.
+
+**`Symbols.sidebar.symbols.preview_auto_show_set(sb, auto_show_preview: boolean)`**
+
+Enable/disable auto showing of preview window.
+
+**`Symbols.sidebar.symbols.preview_auto_show_toggle(sb)`**
+
+Toggle auto showing of preview window.
+
+**`Symbols.sidebar.symbols_cursor_follow_set(sb, follow_cursor: boolean)`**
+
+Enable/disable following the cursor in the source code window.
+
+**`Symbols.sidebar.symbols_cursor_follow_toggle(sb)`**
+
+Toggle following the cursor in the source code window.
+
+**`Symbols.sidebar.symbols.current_unfold(sb)`**
+
+Unfold the symbol under the cursor in the sidebar.
+
+**`Symbols.sidebar.symbols.current_fold(sb)`**
+
+Fold the symbol under the cursor in the sidebar.
+
+**`Symbols.sidebar.symbols.current_fold_toggle(sb)`**
+
+Toggle fold state of the symbol under the cursor in the sidebar.
+
+**`Symbols.sidebar.symbols.current_folded(sb): boolean`**
+
+Returns true if the symbol under the cursor in the sidebar is folded, false otherwise.
+
+**`Symbols.sidebar.symbols.current_peek(sb)`**
+
+In source code window jump to symbol that is under the cursor in the sidebar.
+
+**`Symbols.sidebar.symbols.current_visible_children(sb): integer`**
+
+Return the number of visible (not filtered out) children of the symbol under cursor
+in the sidebar. Can be used to check if it makes sense to fold/unfold symbol.
+
+**`Symbols.sidebar.symbols.goto_parent(sb)`**
+
+Move the cursor in the sidebar to the parent symbol.
+
+**`Symbols.sidebar.symbols.goto_next_symbol_at_level(sb)`**
+
+Move the cursor in the sidebar to the next symbol at the same level.
+
+**`Symbols.sidebar.symbols.goto_prev_symbol_at_level(sb)`**
+
+Move the cursor in the sidebar to the previous symbol at the same level.
 
 # Alternatives
 
 - [aerial.nvim](https://github.com/stevearc/aerial.nvim)
 - [outline.nvim](https://github.com/hedyhli/outline.nvim)
-
