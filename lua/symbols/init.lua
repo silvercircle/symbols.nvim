@@ -517,7 +517,7 @@ end
 ---@field root Symbol
 ---@field states SymbolStates
 ---@field any_nesting boolean
-
+---@field total_symbols_count number
 ---@return Symbols
 local function Symbols_new()
     local root = Symbol_root()
@@ -529,6 +529,7 @@ local function Symbols_new()
             [root] = SymbolState_new()
         },
         any_nesting = false,
+        total_symbols_count = 0
     }
     symbols.states[root].folded = false
     return symbols
@@ -539,7 +540,7 @@ end
 local function Symbols_apply_filter(symbols, symbol_filter)
     local ft = vim.api.nvim_get_option_value("filetype", { buf = symbols.buf })
     symbols.any_nesting = false
-
+    symbols.total_symbols_count = 0
     ---@param symbol Symbol
     local function apply(symbol)
         local state = symbols.states[symbol]
@@ -549,6 +550,7 @@ local function Symbols_apply_filter(symbols, symbol_filter)
             state.visible = symbol_filter(ft, symbol)
         end
         state.visible_children = 0
+        symbols.total_symbols_count = symbols.total_symbols_count + #symbol.children
         for _, child in ipairs(symbol.children) do
             apply(child)
             if symbols.states[child].visible then
