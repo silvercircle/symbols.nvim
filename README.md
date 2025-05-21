@@ -385,6 +385,8 @@ Default config below.
         -- cursor in the source window. Does not unfold the symbols. You can jump
         -- to symbol with unfolding with "gs" by default.
         cursor_follow = true,
+        -- also follow in insert mode (note: cursor_follow must be enabled)
+        cursor_follow_i = true,
         auto_resize = {
             -- When enabled the sidebar will be resized whenever the view changes.
             -- For example, after folding/unfolding symbols, after toggling inline details
