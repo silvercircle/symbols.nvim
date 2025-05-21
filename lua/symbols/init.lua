@@ -1256,6 +1256,7 @@ end
 ---@field symbol_filters_enabled boolean
 ---@field symbol_filter SymbolFilter
 ---@field cursor_follow boolean
+---@field cursor_follow_i boolean
 ---@field auto_peek boolean
 ---@field close_on_goto boolean
 ---@field on_symbols_complete function
@@ -1370,6 +1371,7 @@ function Sidebar:new()
         symbol_filters_enabled = true,
         symbol_filter = config.symbol_filter,
         cursor_follow = config.cursor_follow,
+        cursor_follow_i = config.cursor_follow_i,
         auto_peek = config.auto_peek,
         close_on_goto = config.close_on_goto,
         resize_callback_running = false,
@@ -2958,6 +2960,7 @@ local function sidebar_new(sidebar, ctx, win)
     sidebar.symbol_filters_enabled = true
     sidebar.symbol_filter = config.symbol_filter
     sidebar.cursor_follow = config.cursor_follow
+    sidebar.cursor_follow_i = config.cursor_follow_i
     sidebar.auto_peek = config.auto_peek
     sidebar.close_on_goto = config.close_on_goto
     sidebar.unfold_on_goto = config.unfold_on_goto
@@ -2988,7 +2991,7 @@ local function sidebar_new(sidebar, ctx, win)
     )
 
     vim.api.nvim_create_autocmd(
-        { "CursorMoved" },
+        sidebar.cursor_follow_i == true and { "CursorMoved", "CursorMovedI" } or { "CursorMoved" },
         {
             group = global_autocmd_group,
             callback = function()

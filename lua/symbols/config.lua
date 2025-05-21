@@ -93,6 +93,7 @@ M.OpenDirection = {
 ---@field open_direction OpenDirection
 ---@field on_open_make_windows_equal boolean
 ---@field cursor_follow boolean
+---@field cursor_follow_i boolean
 ---@field auto_resize AutoResizeConfig
 ---@field fixed_width integer
 ---@field symbol_filter fun(ft: string, symbol: Symbol): boolean
@@ -149,6 +150,7 @@ M.default = {
         open_direction = "try-left",
         on_open_make_windows_equal = true,
         cursor_follow = true,
+        cursor_follow_i = false,
         auto_resize = {
             enabled = true,
             min_width = 20,
