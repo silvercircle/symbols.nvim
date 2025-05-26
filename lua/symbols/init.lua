@@ -57,6 +57,7 @@ end
 
 ---@param win integer
 ---@param duration_ms integer
+---@param lines integer
 local function flash_highlight_under_cursor(win, duration_ms, lines)
     local buf = vim.api.nvim_win_get_buf(win)
 
@@ -624,6 +625,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, o
     end
 
     ---@param provider_name string
+    ---@return fun()
     local function _on_fail(provider_name)
         return function()
             cleanup_on_fail()
@@ -633,6 +635,7 @@ local function SymbolsRetriever_retrieve(retriever, buf, on_retrieve, on_fail, o
     end
 
     ---@param provider_name string
+    ---@return fun()
     local function _on_timeout(provider_name)
         return function()
             cleanup_on_fail()
@@ -738,6 +741,7 @@ end
 ---@return WinSettings
 local function WinSettings_get(win)
     ---@param opt string
+    ---@return any
     local function get_opt(opt)
         return vim.api.nvim_get_option_value(opt, { win = win })
     end
@@ -969,7 +973,7 @@ function SearchView:init_prompt_buf()
             if self.sidebar.close_on_goto then
                 self.sidebar:close()
             else
-                self.sidebar:change_view("symbols")
+                self.sidebar:change_view("symbols", false)
             end
         end,
         { buffer = self.prompt_buf }
@@ -1064,6 +1068,8 @@ end
 ---@field s string
 ---@field i integer
 
+---@param symbols Symbols
+---@param ft string
 ---@return SearchSymbol[], Symbol[]
 local function _prepare_symbols_for_search(symbols, ft)
     local search_symbols = {}
@@ -1997,6 +2003,8 @@ end
 function Sidebar:force_refresh_symbols(callback)
     callback = callback or function(...) end
 
+    ---@param symbol Symbol
+    ---@param name string
     ---@return Symbol?
     local function _find_symbol_with_name(symbol, name)
         for _, sym in ipairs(symbol.children) do
@@ -2896,7 +2904,9 @@ function Sidebar:set_cursor_at_symbol_from_source()
     self:set_cursor_at_symbol(symbol, false)
 end
 
+---@param sidebar Sidebar
 ---@param ctx symbols.Context
+---@param win integer
 local function sidebar_new(sidebar, ctx, win)
     local config = ctx.config.sidebar
 
@@ -3056,6 +3066,7 @@ local function setup_dev(ctx)
 
 end
 
+---@param ctx symbols.Context
 ---@param win integer
 ---@return Sidebar
 local function get_sidebar(ctx, win)
@@ -3431,6 +3442,7 @@ Symbols.sidebar.cursor_hiding_toggle = function()
 end
 
 Symbols.sidebar.view_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param view "symbols" | "search"
     function(sidebar, view)
         sidebar:change_view(view, false)
@@ -3442,6 +3454,7 @@ Symbols.sidebar.view_get = api_sidebar(
 )
 
 Symbols.sidebar.auto_resize_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param auto_resize boolean
     function(sidebar, auto_resize)
         sidebar.auto_resize.enabled = auto_resize
@@ -3461,6 +3474,7 @@ Symbols.sidebar.auto_resize_toggle = api_sidebar(
 )
 
 Symbols.sidebar.auto_resize_get = api_sidebar(
+    ---@param sidebar Sidebar
     ---@return boolean
     function(sidebar)
         return sidebar.auto_resize.enabled
@@ -3468,6 +3482,7 @@ Symbols.sidebar.auto_resize_get = api_sidebar(
 )
 
 Symbols.sidebar.width_min_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param min_width integer
     function(sidebar, min_width)
         sidebar.auto_resize.min_width = min_width
@@ -3478,6 +3493,7 @@ Symbols.sidebar.width_min_set = api_sidebar(
 )
 
 Symbols.sidebar.width_min_get = api_sidebar(
+    ---@param sidebar Sidebar
     ---@return integer
     function(sidebar)
         return sidebar.auto_resize.min_width
@@ -3485,6 +3501,7 @@ Symbols.sidebar.width_min_get = api_sidebar(
 )
 
 Symbols.sidebar.width_max_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param max_width integer
     function(sidebar, max_width)
         sidebar.auto_resize.max_width = max_width
@@ -3495,6 +3512,7 @@ Symbols.sidebar.width_max_set = api_sidebar(
 )
 
 Symbols.sidebar.width_max_get = api_sidebar(
+    ---@param sidebar Sidebar
     ---@return integer
     function(sidebar)
         return sidebar.auto_resize.max_width
@@ -3528,6 +3546,7 @@ Symbols.sidebar.symbols.unfold_all = api_sidebar(
 )
 
 Symbols.sidebar.symbols.unfold = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param levels integer
     function(sidebar, levels)
         sidebar:_unfold_one_level(levels or 1)
@@ -3536,6 +3555,7 @@ Symbols.sidebar.symbols.unfold = api_sidebar(
 )
 
 Symbols.sidebar.symbols.fold = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param levels integer
     function(sidebar, levels)
         sidebar:_fold_one_level(levels or 1)
@@ -3546,6 +3566,7 @@ Symbols.sidebar.symbols.fold = api_sidebar(
 Symbols.sidebar.symbols.goto_symbol_under_cursor = api_sidebar(Sidebar.show_symbol_under_cursor)
 
 Symbols.sidebar.symbols.inline_details_show_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param inline_details_show boolean
     function(sidebar, inline_details_show)
         if inline_details_show then
@@ -3558,15 +3579,18 @@ Symbols.sidebar.symbols.inline_details_show_set = api_sidebar(
 Symbols.sidebar.symbols.inline_details_show_toggle = api_sidebar(Sidebar.inline_details_toggle)
 
 Symbols.sidebar.symbols.details_auto_show_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param auto_show boolean
     function(sidebar, auto_show) sidebar.details:auto_show_set(auto_show) end
 )
 Symbols.sidebar.symbols.details_auto_show_toggle = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param auto_show boolean
     function(sidebar, auto_show) sidebar.details:auto_show_set(auto_show) end
 )
 
 Symbols.sidebar.symbols.preview_auto_show_set = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param auto_show boolean
     function(sidebar, auto_show) sidebar.preview:auto_show_set(auto_show) end
 )
@@ -3578,6 +3602,7 @@ Symbols.sidebar.symbols_cursor_follow_set = api_sidebar(Sidebar.cursor_follow_se
 Symbols.sidebar.symbols_cursor_follow_toggle = api_sidebar(Sidebar.cursor_follow_toggle)
 
 Symbols.sidebar.symbols.current_unfold = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param rec boolean
     function(sidebar, rec)
         if rec then
@@ -3590,6 +3615,7 @@ Symbols.sidebar.symbols.current_unfold = api_sidebar(
 )
 
 Symbols.sidebar.symbols.current_fold = api_sidebar(
+    ---@param sidebar Sidebar
     ---@param rec boolean
     function(sidebar, rec)
         if rec then
@@ -3612,6 +3638,7 @@ Symbols.sidebar.symbols.current_fold_toggle = function(sb, rec)
 end
 
 Symbols.sidebar.symbols.current_folded = api_sidebar(
+    ---@param sidebar Sidebar
     ---@return boolean
     function(sidebar)
         local _, state = sidebar:current_symbol()
@@ -3622,6 +3649,7 @@ Symbols.sidebar.symbols.current_folded = api_sidebar(
 Symbols.sidebar.symbols.current_peek = api_sidebar(Sidebar.peek)
 
 Symbols.sidebar.symbols.current_visible_children = api_sidebar(
+    ---@param sidebar Sidebar
     ---@return integer
     function(sidebar)
         local _, state = sidebar:current_symbol()
