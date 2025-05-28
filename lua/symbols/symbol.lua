@@ -51,6 +51,7 @@ function M.Symbol_path(symbol)
     return path
 end
 
+---@param symbol Symbol
 ---@return string
 function M.Symbol_inspect(symbol)
     return vim.inspect({
