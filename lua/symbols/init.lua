@@ -1263,6 +1263,7 @@ end
 ---@field resize_callback_running boolean
 ---@field resize_last_schedule_ms number
 ---@field resize_ignore_next boolean
+---@field source_current_line integer
 local Sidebar = {}
 Sidebar.__index = Sidebar ---@diagnostic disable-line
 
@@ -1377,6 +1378,7 @@ function Sidebar:new()
         resize_callback_running = false,
         resize_last_schedule_ms = relative_time_ms(),
         resize_ignore_next = false,
+        source_current_line = -1
     }
     return setmetatable(s, self)
 
@@ -2926,8 +2928,11 @@ function Sidebar:set_cursor_at_symbol_from_source()
     ) then return end
     local symbols = self:current_symbols()
     local pos = Pos_from_point(vim.api.nvim_win_get_cursor(self.source_win))
-    local symbol = symbol_at_pos(symbols.root, pos)
-    self:set_cursor_at_symbol(symbol, false)
+    if pos.line ~= self.source_current_line then
+        self.source_current_line = pos.line
+        local symbol = symbol_at_pos(symbols.root, pos)
+        self:set_cursor_at_symbol(symbol, false)
+    end
 end
 
 ---@param ctx symbols.Context
@@ -2966,6 +2971,7 @@ local function sidebar_new(sidebar, ctx, win)
     sidebar.unfold_on_goto = config.unfold_on_goto
     sidebar.hl_details = config.hl_details
     sidebar.on_symbols_complete = config.on_symbols_complete
+    sidebar.source_current_line = -1
 
     sidebar.buf = vim.api.nvim_create_buf(false, true)
     nvim.buf_set_modifiable(sidebar.buf, false)
@@ -3275,6 +3281,7 @@ local function setup_autocommands(ctx)
                     if sidebar:source_win_buf() == source_buf then
                         sidebar.symbols_need_refreshing = true
                         sidebar:refresh_symbols()
+                        sidebar.source_current_line = -1
                     end
                 end
             end
