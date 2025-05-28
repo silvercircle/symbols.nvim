@@ -350,6 +350,8 @@ local function json_get_symbols(parser, buf)
         }
     end
 
+    ---@param kind string
+    ---@param ts_node any
     ---@return string
     local function get_detail(kind, ts_node)
         if kind == "Object" then
@@ -535,6 +537,7 @@ function TSProvider:new(_)
 end
 
 ---@param buf integer
+---@return boolean
 function TSProvider:supports(buf)
     local ft_to_parser_name = {
         help = "vimdoc",
