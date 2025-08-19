@@ -1999,12 +1999,12 @@ function Sidebar:refresh_view()
     local ctx = DisplayContext:new(self)
     local result = get_display_lines(ctx, 1, symbols.root, true)
 
-    if #result.lines == 0 then
-        vim.notify("warning no lines")
-        self.symbols_retriever.cache[symbols.buf].fresh = false
-        local lines = { "No Symbols" }
-        nvim.buf_set_content(self.buf, lines)
-    end
+    --if #result.lines == 0 then
+    --    vim.notify("warning no lines")
+    --    self.symbols_retriever.cache[symbols.buf].fresh = false
+    --    local lines = { "No Symbols" }
+    --    nvim.buf_set_content(self.buf, lines)
+    --end
 
     vim.api.nvim_buf_clear_namespace(self.buf, SIDEBAR_EXT_NS, 0, -1)
     nvim.buf_set_content(self.buf, result.lines)
