@@ -398,6 +398,8 @@ Default config below.
             -- cursor in the source window. Does not unfold the symbols. You can jump
             -- to symbol with unfolding with "gs" by default.
             cursor_follow = true,
+            -- also follow in insert mode (note: cursor_follow must be enabled)
+            cursor_follow_i = true,
             auto_resize = {
                 -- When enabled the sidebar will be resized whenever the view changes.
                 -- For example, after folding/unfolding symbols, after toggling inline details
@@ -442,6 +444,9 @@ Default config below.
             -- highlight group for the inline details shown next to the symbol name
             -- (provider - dependent)
             hl_details = "Comment",
+            -- this function will be called when the symbols have been retrieved
+            -- ctx is of @class CompleteContext
+            on_symbols_complete = function(ctx) end,
             -- Config for the preview window.
             preview = {
                 -- Whether the preview window is always opened when the sidebar is
