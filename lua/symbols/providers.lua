@@ -329,6 +329,49 @@ local function markdown_get_symbols(parser, _)
 end
 
 ---@type TSProviderGetSymbols
+local function rst_get_symbols(parser, _)
+    local rootNode = parser:parse()[1]:root()
+    local queryString = [[
+        [
+            (section (title) @H1)
+        ]
+    ]]
+    local query = vim.treesitter.query.parse("rst", queryString)
+    local capture_group_to_level = { H1 = 1 }
+    local root = Symbol_root()
+    local current = root
+    for id, node, _, _ in query:iter_captures(rootNode, 0) do
+        -- vim.notify(vim.inspect(node))
+        local kind = query.captures[id]
+        local row1, col1, row2, col2 = node:range()
+        local name = vim.api.nvim_buf_get_text(0, row1, col1, row2, col2, {})[1]
+        local level = capture_group_to_level[kind]
+        while current.level >= level do
+            current = current.parent
+            assert(current ~= nil)
+        end
+        local start_row, start_col, end_row, end_col = node:parent():parent():range()
+        local section_range = {
+            ["start"] = { line = start_row, character = start_col },
+            ["end"] = { line = end_row - 1, character = end_col },
+        }
+        ---@type Symbol
+        local new = {
+            kind = kind,
+            name = name,
+            detail = "",
+            level = level,
+            parent = current,
+            children = {},
+            range = section_range,
+        }
+        table.insert(current.children, new)
+        current = new
+    end
+
+    return true, root
+end
+---@type TSProviderGetSymbols
 local function json_get_symbols(parser, buf)
     local ts_type_kind = {
         ["object"] = "Object",
@@ -825,6 +868,7 @@ function TSProvider:supports(buf)
         org = "org",
         make = "make",
         typescript = "typescript",
+        rst = "rst"
     }
     local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
     local parser_name = ft_to_parser_name[ft]
@@ -848,6 +892,7 @@ function TSProvider:get_symbols(buf)
         org = org_get_symbols,
         make = make_get_symbols,
         typescript = typescript_get_symbols,
+        rst = rst_get_symbols
     }
     local get_symbols = get_symbols_funs[self.ft]
     assert(get_symbols ~= nil, "Failed to get `get_symbols` for ft: " .. tostring(self.ft))
