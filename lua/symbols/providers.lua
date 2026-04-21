@@ -187,7 +187,7 @@ function LspProvider:async_get_symbols(buf, refresh_symbols, on_fail, on_timeout
     end
 
     local params = { textDocument = vim.lsp.util.make_text_document_params(buf), }
-    local ok, request_id = self.client.request(vim.lsp.protocol.Methods.textDocument_documentSymbol, params, handler)
+    local ok, request_id = self.client:request(vim.lsp.protocol.Methods.textDocument_documentSymbol, params, handler)
     if not ok then
         on_fail()
         return
